@@ -18,6 +18,8 @@ const appDashboard = {
     const depts = appData.departments.length;
     const positions = appData.positions.length;
 
+    const resigned = appData.employees.filter(e => e.employment_status === 'Đã nghỉ việc').length;
+
     document.getElementById('kpi-total-emp').textContent = utils.formatNumber(total);
     document.getElementById('kpi-active-emp').textContent = utils.formatNumber(active);
     document.getElementById('kpi-probation-emp').textContent = utils.formatNumber(probation);
@@ -26,6 +28,8 @@ const appDashboard = {
     document.getElementById('sidebar-emp-count').textContent = total;
     document.getElementById('sidebar-dept-count').textContent = depts;
     document.getElementById('sidebar-pos-count').textContent = positions;
+    const sidebarResignedEl = document.getElementById('sidebar-resigned-count');
+    if (sidebarResignedEl) sidebarResignedEl.textContent = resigned;
   },
 
   renderCharts() {

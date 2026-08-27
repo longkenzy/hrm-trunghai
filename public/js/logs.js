@@ -3,13 +3,17 @@
 // ==========================================================================
 
 const appLogs = {
+  initialized: false,
   logs: [],
   filteredLogs: [],
   currentPage: 1,
   pageSize: 20,
 
   async init() {
-    this.attachEventListeners();
+    if (!this.initialized) {
+      this.attachEventListeners();
+      this.initialized = true;
+    }
     await this.fetchLogs();
   },
 

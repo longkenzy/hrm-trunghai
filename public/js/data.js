@@ -16,6 +16,9 @@ const appData = {
   insurance: [],
   contracts: [],
   accounts: [],
+  trash: [],
+
+  company: {},
 
   // Lookup maps
   deptMap: {},
@@ -29,6 +32,7 @@ const appData = {
       const json = await res.json();
       if (json.success && json.tables) {
         this.tables = json.tables;
+        this.company = json.company || {};
         this.employees = (json.tables['03_Employees'] || []).sort((a, b) => (a.employee_id || '').localeCompare(b.employee_id || '', undefined, { numeric: true, sensitivity: 'base' }));
         this.departments = json.tables['01_Departments'] || [];
         this.positions = json.tables['02_Positions'] || [];
@@ -40,9 +44,16 @@ const appData = {
         this.insurance = json.tables['09_Insurance_Welfare'] || [];
         this.contracts = json.tables['10_Contracts'] || [];
         this.accounts = json.tables['11_System_Accounts'] || [];
+        this.trash = json.tables['13_Recycle_Bin'] || [];
 
         // Build lookup maps
         this.buildMaps();
+
+        // Apply Company Branding
+        if (window.appCompany) {
+          appCompany.applyBranding(this.company);
+        }
+
         this.isLoaded = true;
         return true;
       }

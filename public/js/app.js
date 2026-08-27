@@ -6,21 +6,48 @@ const app = {
   async init() {
     console.log('Initializing TRUNG HAI HRM WebApp...');
     
-    // 1. Load Data
+    // Check if system needs Initial Setup Wizard
+    try {
+      const setupRes = await fetch('/api/setup/status');
+      const setupData = await setupRes.json();
+      if (setupData && setupData.is_setup_completed === false) {
+        window.location.href = '/setup';
+        return;
+      }
+    } catch (e) {
+      console.warn('Setup status check error:', e);
+    }
+
+    // 1. Initialize Auth Session immediately (Synchronous from LocalStorage)
+    appAuth.init();
+
+    // 2. Load Data from Backend
     const loaded = await appData.init();
     if (!loaded) {
       utils.showToast('Không thể kết nối CSDL máy chủ', 'error');
     }
 
-    // 2. Initialize Sub-modules
+    // 3. Initialize Sub-modules
+    appCompany.init();
     appDashboard.init();
     appEmployees.init();
+    appImport.init();
+    appResigned.init();
     appOrganization.init();
+    appReports.init();
     appAccounts.init();
     appLogs.init();
-    appAuth.init();
+    appTrash.init();
 
-    // 3. Navigation setup
+    // 4. Update sidebar count badges
+    const sideDeptCount = document.getElementById('sidebar-dept-count');
+    if (sideDeptCount) sideDeptCount.textContent = (appData.departments || []).length;
+    const sidePosCount = document.getElementById('sidebar-pos-count');
+    if (sidePosCount) sidePosCount.textContent = (appData.positions || []).length;
+    const sideResignedCount = document.getElementById('sidebar-resigned-count');
+    if (sideResignedCount) sideResignedCount.textContent = (appData.employees || []).filter(e => e.employment_status === 'Đã nghỉ việc').length;
+
+    // 5. Navigation setup
     this.setupNavigation();
     this.setupSidebarToggle();
     this.setupGlobalSearch();
@@ -30,6 +57,9 @@ const app = {
     window.addEventListener('resize', () => {
       if (document.getElementById('view-dashboard')?.classList.contains('active')) {
         appDashboard.renderCharts();
+      }
+      if (document.getElementById('view-reports')?.classList.contains('active')) {
+        appReports.renderCharts();
       }
     });
 
@@ -45,6 +75,9 @@ const app = {
         setTimeout(() => {
           if (document.getElementById('view-dashboard')?.classList.contains('active')) {
             appDashboard.renderCharts();
+          }
+          if (document.getElementById('view-reports')?.classList.contains('active')) {
+            appReports.renderCharts();
           }
         }, 250);
       });
@@ -62,9 +95,11 @@ const app = {
       'departments': '<i class="fa-solid fa-building"></i> <span>Danh Sách Phòng Ban</span>',
       'positions': '<i class="fa-solid fa-briefcase"></i> <span>Vị Trí Công Việc</span>',
       'contracts': '<i class="fa-solid fa-file-contract"></i> <span>Hợp Đồng & Cảnh Báo</span>',
-      'reports': '<i class="fa-solid fa-file-excel"></i> <span>Báo Cáo & Xuất Dữ Liệu</span>',
+      'resigned': '<i class="fa-solid fa-user-xmark"></i> <span>Quản Lý Nhân Sự Nghỉ Việc</span>',
+      'reports': '<i class="fa-solid fa-chart-line"></i> <span>Báo Cáo Biến Động Nhân Sự</span>',
       'accounts': '<i class="fa-solid fa-user-shield"></i> <span>Tài Khoản & Phân Quyền</span>',
-      'logs': '<i class="fa-solid fa-clock-rotate-left"></i> <span>Nhật Ký Hoạt Động Hệ Thống</span>'
+      'logs': '<i class="fa-solid fa-clock-rotate-left"></i> <span>Nhật Ký Hoạt Động Hệ Thống</span>',
+      'trash': '<i class="fa-solid fa-trash-can"></i> <span>Thùng Rác & Khôi Phục Nhân Sự</span>'
     };
 
     navItems.forEach(item => {
@@ -89,6 +124,10 @@ const app = {
         // Trigger dynamic renders on view activation
         if (viewId === 'dashboard') {
           setTimeout(() => appDashboard.renderCharts(), 50);
+        } else if (viewId === 'reports') {
+          appReports.render();
+        } else if (viewId === 'resigned') {
+          appResigned.render();
         } else if (viewId === 'departments') {
           appOrganization.renderDepartmentsTable();
         } else if (viewId === 'positions') {
@@ -99,6 +138,8 @@ const app = {
           appAccounts.init();
         } else if (viewId === 'logs') {
           appLogs.fetchLogs();
+        } else if (viewId === 'trash') {
+          appTrash.render();
         }
       });
     });

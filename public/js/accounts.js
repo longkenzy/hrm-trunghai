@@ -3,13 +3,18 @@
 // ==========================================================================
 
 const appAccounts = {
+  initialized: false,
+  isSaving: false,
   currentPage: 1,
   pageSize: 15,
   filteredAccounts: [],
   selectedAccountId: null,
 
   init() {
-    this.attachEventListeners();
+    if (!this.initialized) {
+      this.attachEventListeners();
+      this.initialized = true;
+    }
     this.renderKPIs();
     this.applyFilters();
   },
@@ -88,7 +93,7 @@ const appAccounts = {
     tbody.innerHTML = pageItems.map(a => {
       const isAdmin = a.role === 'ADMIN';
       const roleBadge = isAdmin ? 'badge-red' : 'badge-navy';
-      const roleLabel = isAdmin ? '👑 Admin' : '👤 Nhân sự';
+      const roleLabel = isAdmin ? '👑 Admin' : '👤 User';
 
       const statusBadge = a.account_status === 'Kích hoạt' || a.account_status === 'Hoạt động' 
         ? '<span class="badge badge-active"><i class="fa-solid fa-circle-check"></i> Hoạt động</span>'
@@ -231,7 +236,7 @@ const appAccounts = {
     // Populate employees cleanly
     this.populateEmployeeOptions('');
 
-    document.getElementById('acc-form-role').value = 'HR';
+    document.getElementById('acc-form-role').value = 'USER';
     document.getElementById('acc-form-status').value = 'Kích hoạt';
     document.getElementById('acc-form-password').value = '123456';
     document.getElementById('acc-password-group').style.display = 'block';
@@ -272,7 +277,7 @@ const appAccounts = {
     document.getElementById('acc-form-emp-id').value = acc.employee_id;
 
     document.getElementById('acc-form-email').value = acc.account_email || '';
-    document.getElementById('acc-form-role').value = acc.role === 'ADMIN' ? 'ADMIN' : 'HR';
+    document.getElementById('acc-form-role').value = acc.role === 'ADMIN' ? 'ADMIN' : 'USER';
     document.getElementById('acc-form-status').value = acc.account_status || 'Kích hoạt';
     document.getElementById('acc-password-group').style.display = 'none'; // Only change via reset modal
 
@@ -285,7 +290,12 @@ const appAccounts = {
 
   // Save Account (Create or Update)
   async saveAccount(e) {
-    e.preventDefault();
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (this.isSaving) return;
+
     const empId = document.getElementById('acc-form-emp-id').value;
     const email = document.getElementById('acc-form-email').value.trim();
     const role = document.getElementById('acc-form-role').value;
@@ -300,9 +310,13 @@ const appAccounts = {
     const emp = appData.employees.find(e => e.employee_id === empId);
     const fullName = emp ? emp.full_name : '';
 
-    if (this.selectedAccountId) {
-      // UPDATE
-      try {
+    this.isSaving = true;
+    const submitBtn = document.querySelector('#form-account-action button[type="submit"]');
+    if (submitBtn) submitBtn.disabled = true;
+
+    try {
+      if (this.selectedAccountId) {
+        // UPDATE
         const res = await fetch(`/api/accounts/${this.selectedAccountId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -326,13 +340,8 @@ const appAccounts = {
         } else {
           utils.showToast(json.message || 'Lỗi cập nhật', 'error');
         }
-      } catch (err) {
-        console.error(err);
-        utils.showToast('Lỗi máy chủ', 'error');
-      }
-    } else {
-      // CREATE
-      try {
+      } else {
+        // CREATE
         const res = await fetch('/api/accounts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -347,7 +356,14 @@ const appAccounts = {
         });
         const json = await res.json();
         if (json.success) {
-          appData.accounts.unshift(json.account);
+          // Prevent duplicates in frontend state
+          const exists = appData.accounts.some(a => a.account_id === json.account.account_id || a.employee_id === json.account.employee_id);
+          if (!exists) {
+            appData.accounts.unshift(json.account);
+          } else {
+            const idx = appData.accounts.findIndex(a => a.account_id === json.account.account_id || a.employee_id === json.account.employee_id);
+            if (idx >= 0) appData.accounts[idx] = json.account;
+          }
           this.closeFormModal();
           this.renderKPIs();
           this.applyFilters();
@@ -355,10 +371,13 @@ const appAccounts = {
         } else {
           utils.showToast(json.message || 'Lỗi cấp tài khoản', 'error');
         }
-      } catch (err) {
-        console.error(err);
-        utils.showToast('Lỗi máy chủ', 'error');
       }
+    } catch (err) {
+      console.error(err);
+      utils.showToast('Lỗi máy chủ: ' + (err.message || ''), 'error');
+    } finally {
+      this.isSaving = false;
+      if (submitBtn) submitBtn.disabled = false;
     }
   },
 

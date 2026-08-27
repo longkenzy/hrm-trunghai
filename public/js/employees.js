@@ -3,6 +3,7 @@
 // ==========================================================================
 
 const appEmployees = {
+  initialized: false,
   currentPage: 1,
   pageSize: 25,
   filteredList: [],
@@ -10,7 +11,10 @@ const appEmployees = {
 
   init() {
     this.populateFilterDropdowns();
-    this.attachEventListeners();
+    if (!this.initialized) {
+      this.attachEventListeners();
+      this.initialized = true;
+    }
     this.applyFilters();
   },
 
@@ -77,16 +81,35 @@ const appEmployees = {
       });
     }
 
-    // Modal Tabs Navigation
-    document.querySelectorAll('.modal-tab-btn').forEach(btn => {
+    // Detail Modal Tabs Navigation
+    document.querySelectorAll('#modal-employee-detail .modal-tab-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const targetTab = e.currentTarget.getAttribute('data-tab');
-        document.querySelectorAll('.modal-tab-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('#modal-employee-detail .modal-tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('#modal-employee-detail .tab-pane').forEach(p => p.classList.remove('active'));
         
         e.currentTarget.classList.add('active');
         const pane = document.getElementById(targetTab);
         if (pane) pane.classList.add('active');
+      });
+    });
+
+    // Form Modal Tabs Navigation
+    document.querySelectorAll('.form-tab-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const targetTab = e.currentTarget.getAttribute('data-tab');
+        document.querySelectorAll('.form-tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.form-tab-pane').forEach(p => {
+          p.classList.remove('active');
+          p.style.display = 'none';
+        });
+        
+        e.currentTarget.classList.add('active');
+        const pane = document.getElementById(targetTab);
+        if (pane) {
+          pane.classList.add('active');
+          pane.style.display = 'block';
+        }
       });
     });
 
@@ -138,35 +161,34 @@ const appEmployees = {
     const statusVal = document.getElementById('emp-filter-status')?.value || '';
     const natureVal = document.getElementById('emp-filter-nature')?.value || '';
 
-    // Contact and ID card maps for full text search
     const contactMap = {};
     appData.contacts.forEach(c => contactMap[c.employee_id] = c);
     const idMap = {};
     appData.identity.forEach(i => idMap[i.employee_id] = i);
 
     this.filteredList = appData.employees.filter(e => {
-      const c = contactMap[e.employee_id] || {};
-      const idDoc = idMap[e.employee_id] || {};
-      const deptName = (appData.deptMap[e.department_id] || '').toLowerCase();
-      const posName = (appData.posMap[e.position_id] || '').toLowerCase();
-
-      // Search match
-      if (searchVal) {
-        const matches = 
-          (e.employee_id && e.employee_id.toLowerCase().includes(searchVal)) ||
-          (e.full_name && e.full_name.toLowerCase().includes(searchVal)) ||
-          (c.mobile_phone && c.mobile_phone.includes(searchVal)) ||
-          (c.work_email && c.work_email.toLowerCase().includes(searchVal)) ||
-          (idDoc.id_number && idDoc.id_number.includes(searchVal)) ||
-          deptName.includes(searchVal) ||
-          posName.includes(searchVal);
-        if (!matches) return false;
-      }
-
       if (deptVal && e.department_id !== deptVal) return false;
       if (posVal && e.position_id !== posVal) return false;
       if (statusVal && e.employment_status !== statusVal) return false;
       if (natureVal && e.labor_nature !== natureVal) return false;
+
+      if (searchVal) {
+        const c = contactMap[e.employee_id] || {};
+        const idDoc = idMap[e.employee_id] || {};
+        const dName = (appData.deptMap[e.department_id] || '').toLowerCase();
+        const pName = (appData.posMap[e.position_id] || '').toLowerCase();
+
+        const match = (
+          (e.employee_id || '').toLowerCase().includes(searchVal) ||
+          (e.full_name || '').toLowerCase().includes(searchVal) ||
+          (c.mobile_phone || '').includes(searchVal) ||
+          (c.work_email || '').toLowerCase().includes(searchVal) ||
+          (idDoc.id_number || '').includes(searchVal) ||
+          dName.includes(searchVal) ||
+          pName.includes(searchVal)
+        );
+        if (!match) return false;
+      }
 
       return true;
     });
@@ -231,10 +253,10 @@ const appEmployees = {
               <button class="btn btn-icon btn-sm" title="Xem Chi Tiết 8 Tab" onclick="appEmployees.openDetailModal('${e.employee_id}')">
                 <i class="fa-solid fa-eye" style="color: var(--primary-navy);"></i>
               </button>
-              <button class="btn btn-icon btn-sm" title="Chỉnh Sửa" onclick="appEmployees.openEditModal('${e.employee_id}')">
+              <button class="btn btn-icon btn-sm" title="Chỉnh Sửa 34 Cột" onclick="appEmployees.openEditModal('${e.employee_id}')">
                 <i class="fa-solid fa-pen-to-square" style="color: #2563EB;"></i>
               </button>
-              <button class="btn btn-icon btn-sm" title="Xóa Nhân Viên" onclick="appEmployees.deleteEmployee('${e.employee_id}')">
+              <button class="btn btn-icon btn-sm" title="Xóa Nhân Viên" onclick="appEmployees.showDeletePopover(event, '${e.employee_id}')">
                 <i class="fa-solid fa-trash" style="color: var(--accent-red);"></i>
               </button>
             </div>
@@ -261,40 +283,31 @@ const appEmployees = {
     const container = document.getElementById('pagination-controls');
     if (!container) return;
 
-    let html = `
-      <button class="page-btn" ${this.currentPage === 1 ? 'disabled' : ''} onclick="appEmployees.goToPage(1)"><i class="fa-solid fa-angles-left"></i></button>
-      <button class="page-btn" ${this.currentPage === 1 ? 'disabled' : ''} onclick="appEmployees.goToPage(${this.currentPage - 1})"><i class="fa-solid fa-angle-left"></i></button>
-    `;
+    let html = '';
+    html += `<button class="page-btn ${this.currentPage === 1 ? 'disabled' : ''}" onclick="appEmployees.goToPage(${this.currentPage - 1})"><i class="fa-solid fa-angle-left"></i></button>`;
 
-    // Page window
-    const maxBtns = 5;
+    const maxPagesToShow = 5;
     let startPage = Math.max(1, this.currentPage - 2);
-    let endPage = Math.min(totalPages, startPage + maxBtns - 1);
-    if (endPage - startPage < maxBtns - 1) {
-      startPage = Math.max(1, endPage - maxBtns + 1);
+    let endPage = Math.min(totalPages, startPage + maxPagesToShow - 1);
+    if (endPage - startPage < maxPagesToShow - 1) {
+      startPage = Math.max(1, endPage - maxPagesToShow + 1);
     }
 
-    for (let p = startPage; p <= endPage; p++) {
-      html += `<button class="page-btn ${p === this.currentPage ? 'active' : ''}" onclick="appEmployees.goToPage(${p})">${p}</button>`;
+    for (let i = startPage; i <= endPage; i++) {
+      html += `<button class="page-btn ${i === this.currentPage ? 'active' : ''}" onclick="appEmployees.goToPage(${i})">${i}</button>`;
     }
 
-    html += `
-      <button class="page-btn" ${this.currentPage === totalPages ? 'disabled' : ''} onclick="appEmployees.goToPage(${this.currentPage + 1})"><i class="fa-solid fa-angle-right"></i></button>
-      <button class="page-btn" ${this.currentPage === totalPages ? 'disabled' : ''} onclick="appEmployees.goToPage(${totalPages})"><i class="fa-solid fa-angles-right"></i></button>
-    `;
-
+    html += `<button class="page-btn ${this.currentPage === totalPages ? 'disabled' : ''}" onclick="appEmployees.goToPage(${this.currentPage + 1})"><i class="fa-solid fa-angle-right"></i></button>`;
     container.innerHTML = html;
   },
 
-  goToPage(p) {
+  goToPage(page) {
     const totalPages = Math.ceil(this.filteredList.length / this.pageSize) || 1;
-    let target = p;
-    if (target < 1) target = 1;
-    if (target > totalPages) target = totalPages;
-    this.currentPage = target;
+    if (page < 1 || page > totalPages) return;
+    this.currentPage = page;
     this.renderTable();
     this.renderPagination();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 300, behavior: 'smooth' });
   },
 
   // Open Full 8-Tab Detail Modal
@@ -322,16 +335,21 @@ const appEmployees = {
       document.getElementById('det-birth-place').textContent = employee.birth_place || '-';
       document.getElementById('det-native-place').textContent = employee.native_place || '-';
       document.getElementById('det-ethnicity-rel').textContent = `${employee.ethnicity || 'Kinh'} / ${employee.religion || 'Không'}`;
+      document.getElementById('det-marital-children').textContent = `${employee.marital_status || 'Độc thân'} (Số con: ${employee.children_count !== undefined ? employee.children_count : 0})`;
       document.getElementById('det-dept-name').textContent = employee.department_name || employee.department_id || '-';
       document.getElementById('det-pos-name').textContent = employee.position_name || employee.position_id || '-';
+      document.getElementById('det-job-rank').textContent = employee.job_rank || (salary.salary_grade ? `Cấp ${salary.salary_grade}` : 'Cấp 3');
+      document.getElementById('det-job-title').textContent = employee.job_title || employee.position_name || '-';
+      document.getElementById('det-work-loc').textContent = employee.work_location || 'Trụ sở Tổng công ty';
       document.getElementById('det-direct-mgr').textContent = employee.direct_manager_name ? `${employee.direct_manager_name} (${employee.direct_manager_id || ''})` : '-';
       document.getElementById('det-indirect-mgr').textContent = employee.indirect_manager_name ? `${employee.indirect_manager_name} (${employee.indirect_manager_id || ''})` : '-';
       document.getElementById('det-labor-nature').textContent = employee.labor_nature || '-';
       document.getElementById('det-emp-status').textContent = employee.employment_status || '-';
-      document.getElementById('det-trial-date').textContent = utils.formatDate(employee.trial_start_date || employee.probation_start_date);
-      document.getElementById('det-official-date').textContent = utils.formatDate(employee.official_date);
+      document.getElementById('det-start-date').textContent = utils.formatDate(employee.start_date || employee.trial_start_date);
+      document.getElementById('det-end-date').textContent = employee.end_date === 'Không xác định' ? 'Không xác định' : utils.formatDate(employee.end_date);
+      document.getElementById('det-official-date').textContent = utils.formatDate(employee.official_date) || utils.formatDate(employee.trial_start_date);
       document.getElementById('det-seniority').textContent = employee.seniority_text || '-';
-      document.getElementById('det-blacklist').textContent = employee.is_blacklisted ? 'Có (Danh sách đen)' : 'Không';
+      document.getElementById('det-other-certs').textContent = employee.other_certificates || (education && education[0] ? education[0].other_certificates : '') || 'Chứng chỉ An toàn Lao động';
 
       // Tab 2: Contact
       document.getElementById('det-mobile').textContent = contact.mobile_phone || '-';
@@ -369,12 +387,13 @@ const appEmployees = {
       const eduContainer = document.getElementById('det-education-container');
       if (education && education.length > 0) {
         eduContainer.innerHTML = education.map(ed => `
-          <div class="info-item"><span class="info-label">Trình Độ Văn Hóa</span><span class="info-value">${ed.education_level || '12/12'}</span></div>
-          <div class="info-item"><span class="info-label">Trình Độ Đào Tạo</span><span class="info-value">${ed.degree_type || '-'}</span></div>
+          <div class="info-item"><span class="info-label">Trình Độ Văn Hóa</span><span class="info-value">${ed.education_level || 'Đại học'}</span></div>
+          <div class="info-item"><span class="info-label">Trình Độ Đào Tạo</span><span class="info-value">${ed.degree_type || 'Chính quy'}</span></div>
           <div class="info-item"><span class="info-label">Cơ Sở Đào Tạo (Trường)</span><span class="info-value">${ed.institution || '-'}</span></div>
           <div class="info-item"><span class="info-label">Khoa / Bộ Môn</span><span class="info-value">${ed.faculty || '-'}</span></div>
           <div class="info-item"><span class="info-label">Chuyên Ngành Tốt Nghiệp</span><span class="info-value">${ed.major || '-'}</span></div>
           <div class="info-item"><span class="info-label">Năm Tốt Nghiệp / Xếp Loại</span><span class="info-value">${ed.graduation_year || '-'} (${ed.classification || '-'})</span></div>
+          <div class="info-item" style="grid-column: 1 / -1;"><span class="info-label">Bằng Cấp Chuyên Môn Khác</span><span class="info-value" style="color: #059669;">${ed.other_certificates || employee.other_certificates || '-'}</span></div>
         `).join('');
       } else {
         eduContainer.innerHTML = `<div style="grid-column: 1 / -1; color: var(--text-muted); text-align: center; padding: 20px;">Chưa có thông tin văn bằng / học vị.</div>`;
@@ -401,14 +420,14 @@ const appEmployees = {
       // Tab 8: Contract & Account
       const firstContract = contracts && contracts.length > 0 ? contracts[0] : {};
       document.getElementById('det-contract-id').textContent = firstContract.contract_id || '-';
-      document.getElementById('det-contract-type').textContent = firstContract.contract_type || 'Hợp đồng xác định thời hạn';
+      document.getElementById('det-contract-type').textContent = firstContract.contract_type || employee.contract_type || 'Hợp đồng lao động';
       document.getElementById('det-contract-status').textContent = firstContract.contract_status || 'HIỆU LỰC';
       document.getElementById('det-acc-email').textContent = account.account_email || `${employee.employee_id.toLowerCase()}@trunghaico.vn`;
-      document.getElementById('det-acc-role').textContent = account.role || 'EMPLOYEE';
+      document.getElementById('det-acc-role').textContent = account.role || 'USER';
       document.getElementById('det-acc-status').textContent = account.account_status || 'Đã kích hoạt';
 
       // Reset to Tab 1
-      document.querySelector('.modal-tab-btn[data-tab="tab-general"]').click();
+      document.querySelector('#modal-employee-detail .modal-tab-btn[data-tab="tab-general"]').click();
 
       // Show modal
       document.getElementById('modal-employee-detail').classList.add('active');
@@ -424,39 +443,110 @@ const appEmployees = {
 
   openAddModal() {
     document.getElementById('form-is-edit').value = '0';
-    document.getElementById('form-modal-title').textContent = 'Thêm Nhân Viên Mới';
+    document.getElementById('form-modal-title').textContent = 'Thêm Nhân Viên Mới (Đầy Đủ 34 Cột)';
+    document.getElementById('form-modal-icon').className = 'fa-solid fa-user-plus';
     document.getElementById('form-emp-id').value = '';
     document.getElementById('form-emp-id').readOnly = false;
     document.getElementById('employee-crud-form').reset();
+
+    // Default values
+    document.getElementById('form-gender').value = 'Nam';
+    document.getElementById('form-ethnicity').value = 'Kinh';
+    document.getElementById('form-religion').value = 'Không';
+    document.getElementById('form-marital-status').value = 'Độc thân';
+    document.getElementById('form-children-count').value = '0';
+    document.getElementById('form-job-rank').value = 'Cấp 3 - Chuyên viên / Nhân viên Nghiệp vụ';
+    document.getElementById('form-labor-nature').value = 'Chính thức';
+    document.getElementById('form-emp-status').value = 'Đang làm việc';
+    document.getElementById('form-contract-type').value = 'Hợp đồng lao động không xác định thời hạn';
+    document.getElementById('form-id-place').value = 'Cục Cảnh sát Quản lý hành chính về trật tự xã hội';
+    document.getElementById('form-bank-name').value = 'Vietcombank';
+    document.getElementById('form-education-level').value = 'Đại học';
+    document.getElementById('form-emergency-relation').value = 'Vợ';
+
+    // Switch to Tab 1
+    document.querySelector('.form-tab-btn[data-tab="form-tab-personal"]').click();
     document.getElementById('modal-employee-form').classList.add('active');
   },
 
-  openEditModal(empId) {
-    const emp = appData.empMap[empId];
-    if (!emp) return;
+  async openEditModal(empId) {
+    try {
+      const res = await fetch(`/api/employees/${empId}`);
+      const json = await res.json();
+      if (!json.success || !json.data) {
+        utils.showToast('Không thể tải chi tiết nhân viên để sửa', 'error');
+        return;
+      }
 
-    const contact = appData.contacts.find(c => c.employee_id === empId) || {};
-    const salary = appData.salaries.find(s => s.employee_id === empId) || {};
-    const idDoc = appData.identity.find(i => i.employee_id === empId) || {};
+      const { employee, contact, identity, emergency, education, salary, insurance, contracts } = json.data;
+      const firstContract = contracts && contracts.length > 0 ? contracts[0] : {};
+      const firstEmerg = emergency && emergency.length > 0 ? emergency[0] : {};
+      const firstEdu = education && education.length > 0 ? education[0] : {};
 
-    document.getElementById('form-is-edit').value = '1';
-    document.getElementById('form-modal-title').textContent = `Chỉnh Sửa Nhân Viên: ${emp.full_name} (${empId})`;
-    
-    document.getElementById('form-emp-id').value = emp.employee_id;
-    document.getElementById('form-emp-id').readOnly = true;
-    document.getElementById('form-full-name').value = emp.full_name || '';
-    document.getElementById('form-gender').value = emp.gender || 'Nam';
-    document.getElementById('form-dob').value = emp.date_of_birth || '';
-    document.getElementById('form-dept-id').value = emp.department_id || '';
-    document.getElementById('form-pos-id').value = emp.position_id || '';
-    document.getElementById('form-direct-mgr').value = emp.direct_manager_id || '';
-    document.getElementById('form-labor-nature').value = emp.labor_nature || 'Chính thức';
-    document.getElementById('form-mobile').value = contact.mobile_phone || '';
-    document.getElementById('form-email').value = contact.work_email || '';
-    document.getElementById('form-id-num').value = idDoc.id_number || '';
-    document.getElementById('form-salary').value = salary.base_salary || '';
+      document.getElementById('form-is-edit').value = '1';
+      document.getElementById('form-modal-title').textContent = `Chỉnh Sửa Hồ Sơ: ${employee.full_name} (${empId})`;
+      document.getElementById('form-modal-icon').className = 'fa-solid fa-user-pen';
+      
+      // Tab 1: Personal
+      document.getElementById('form-emp-id').value = employee.employee_id || '';
+      document.getElementById('form-emp-id').readOnly = true;
+      document.getElementById('form-full-name').value = employee.full_name || '';
+      document.getElementById('form-gender').value = employee.gender || 'Nam';
+      document.getElementById('form-dob').value = employee.date_of_birth || '';
+      document.getElementById('form-birth-place').value = employee.birth_place || '';
+      document.getElementById('form-native-place').value = employee.native_place || '';
+      document.getElementById('form-ethnicity').value = employee.ethnicity || 'Kinh';
+      document.getElementById('form-religion').value = employee.religion || 'Không';
+      document.getElementById('form-marital-status').value = employee.marital_status || 'Độc thân';
+      document.getElementById('form-children-count').value = employee.children_count !== undefined ? employee.children_count : 0;
+      document.getElementById('form-tax-code').value = employee.tax_code || '';
 
-    document.getElementById('modal-employee-form').classList.add('active');
+      // Tab 2: Job & Contract
+      document.getElementById('form-dept-id').value = employee.department_id || '';
+      document.getElementById('form-pos-id').value = employee.position_id || '';
+      document.getElementById('form-job-rank').value = employee.job_rank || (salary.salary_grade ? `Cấp ${salary.salary_grade} - Kỹ sư Chính` : 'Cấp 3 - Chuyên viên / Nhân viên Nghiệp vụ');
+      document.getElementById('form-job-title').value = employee.job_title || '';
+      document.getElementById('form-work-location').value = employee.work_location || 'Trụ sở Tổng công ty - Tòa nhà Trung Hải, Hà Nội';
+      document.getElementById('form-direct-mgr').value = employee.direct_manager_id || '';
+      document.getElementById('form-labor-nature').value = employee.labor_nature || 'Chính thức';
+      document.getElementById('form-emp-status').value = employee.employment_status || 'Đang làm việc';
+      document.getElementById('form-contract-type').value = firstContract.contract_type || employee.contract_type || 'Hợp đồng lao động không xác định thời hạn';
+      document.getElementById('form-start-date').value = employee.start_date || employee.trial_start_date || '';
+      document.getElementById('form-end-date').value = employee.end_date || firstContract.end_date || 'Không xác định';
+
+      // Tab 3: Contact, CCCD & Emergency
+      document.getElementById('form-mobile').value = contact.mobile_phone || '';
+      document.getElementById('form-email').value = contact.work_email || '';
+      document.getElementById('form-personal-email').value = contact.personal_email || '';
+      document.getElementById('form-perm-address').value = contact.permanent_address_full || '';
+      document.getElementById('form-curr-address').value = contact.current_address_full || '';
+      document.getElementById('form-id-num').value = identity.id_number || '';
+      document.getElementById('form-id-date').value = identity.id_issue_date || '';
+      document.getElementById('form-id-place').value = identity.id_issue_place || 'Cục Cảnh sát Quản lý hành chính về trật tự xã hội';
+      document.getElementById('form-passport-num').value = identity.passport_number || '';
+      document.getElementById('form-emergency-name').value = firstEmerg.contact_name || '';
+      document.getElementById('form-emergency-relation').value = firstEmerg.relationship || 'Vợ';
+      document.getElementById('form-emergency-phone').value = firstEmerg.mobile_phone || '';
+
+      // Tab 4: Salary, Insurance & Education
+      document.getElementById('form-salary').value = salary.base_salary || 0;
+      document.getElementById('form-total-salary').value = salary.total_salary || salary.base_salary || 0;
+      document.getElementById('form-bank-acc').value = salary.bank_account_number || '';
+      document.getElementById('form-bank-name').value = salary.bank_name || 'Vietcombank';
+      document.getElementById('form-bank-branch').value = salary.bank_branch || '';
+      document.getElementById('form-bhxh-book').value = insurance.social_insurance_book_no || insurance.social_insurance_code || '';
+      document.getElementById('form-hospital').value = insurance.hospital_registered || '';
+      document.getElementById('form-education-level').value = firstEdu.education_level || 'Đại học';
+      document.getElementById('form-major').value = firstEdu.major || '';
+      document.getElementById('form-other-certs').value = employee.other_certificates || firstEdu.other_certificates || '';
+
+      // Switch to Tab 1
+      document.querySelector('.form-tab-btn[data-tab="form-tab-personal"]').click();
+      document.getElementById('modal-employee-form').classList.add('active');
+    } catch (e) {
+      console.error(e);
+      utils.showToast('Lỗi khi mở form chỉnh sửa', 'error');
+    }
   },
 
   closeFormModal() {
@@ -473,14 +563,53 @@ const appEmployees = {
       full_name: document.getElementById('form-full-name').value.trim(),
       gender: document.getElementById('form-gender').value,
       date_of_birth: document.getElementById('form-dob').value || null,
+      birth_place: document.getElementById('form-birth-place').value.trim(),
+      native_place: document.getElementById('form-native-place').value.trim(),
+      ethnicity: document.getElementById('form-ethnicity').value.trim(),
+      religion: document.getElementById('form-religion').value.trim(),
+      marital_status: document.getElementById('form-marital-status').value,
+      children_count: parseInt(document.getElementById('form-children-count').value, 10) || 0,
+      tax_code: document.getElementById('form-tax-code').value.trim(),
+
       department_id: document.getElementById('form-dept-id').value,
       position_id: document.getElementById('form-pos-id').value,
+      job_rank: document.getElementById('form-job-rank').value,
+      job_title: document.getElementById('form-job-title').value.trim(),
+      work_location: document.getElementById('form-work-location').value.trim(),
       direct_manager_id: document.getElementById('form-direct-mgr').value || null,
       labor_nature: document.getElementById('form-labor-nature').value,
+      employment_status: document.getElementById('form-emp-status').value,
+      contract_type: document.getElementById('form-contract-type').value,
+      start_date: document.getElementById('form-start-date').value || null,
+      end_date: document.getElementById('form-end-date').value.trim() || 'Không xác định',
+
       mobile_phone: document.getElementById('form-mobile').value.trim(),
       work_email: document.getElementById('form-email').value.trim(),
+      personal_email: document.getElementById('form-personal-email').value.trim(),
+      permanent_address_full: document.getElementById('form-perm-address').value.trim(),
+      current_address_full: document.getElementById('form-curr-address').value.trim(),
+
       id_number: document.getElementById('form-id-num').value.trim(),
-      base_salary: parseFloat(document.getElementById('form-salary').value) || 0
+      id_issue_date: document.getElementById('form-id-date').value || null,
+      id_issue_place: document.getElementById('form-id-place').value.trim(),
+      passport_number: document.getElementById('form-passport-num').value.trim() || null,
+
+      emergency_name: document.getElementById('form-emergency-name').value.trim(),
+      emergency_relation: document.getElementById('form-emergency-relation').value,
+      emergency_phone: document.getElementById('form-emergency-phone').value.trim(),
+
+      base_salary: parseFloat(document.getElementById('form-salary').value) || 0,
+      total_salary: parseFloat(document.getElementById('form-total-salary').value) || parseFloat(document.getElementById('form-salary').value) || 0,
+      bank_account_number: document.getElementById('form-bank-acc').value.trim(),
+      bank_name: document.getElementById('form-bank-name').value,
+      bank_branch: document.getElementById('form-bank-branch').value.trim(),
+
+      social_insurance_book_no: document.getElementById('form-bhxh-book').value.trim(),
+      hospital_registered: document.getElementById('form-hospital').value.trim(),
+
+      education_level: document.getElementById('form-education-level').value,
+      major: document.getElementById('form-major').value.trim(),
+      other_certificates: document.getElementById('form-other-certs').value.trim()
     };
 
     try {
@@ -509,27 +638,156 @@ const appEmployees = {
     }
   },
 
-  async deleteEmployee(empId) {
+  showDeletePopover(event, empId) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    this.hideDeletePopover();
+
     const emp = appData.empMap[empId];
     const name = emp ? emp.full_name : empId;
-    if (!confirm(`Bạn có chắc chắn muốn xóa nhân viên "${name}" (${empId}) khỏi cơ sở dữ liệu?`)) {
-      return;
+    const triggerBtn = event.currentTarget || event.target.closest('button');
+
+    const popover = document.createElement('div');
+    popover.id = 'hrm-emp-delete-popover';
+    popover.className = 'hrm-delete-popover';
+    popover.innerHTML = `
+      <div class="hrm-popover-header">
+        <i class="fa-solid fa-triangle-exclamation" style="color: var(--accent-red); font-size: 13px;"></i>
+        <span>Xác nhận xóa nhân sự</span>
+      </div>
+      <div class="hrm-popover-body">
+        Chuyển nhân viên <strong style="color: var(--primary-navy);">${name}</strong> (<span style="color: var(--accent-red); font-weight: 600;">${empId}</span>) vào <strong>Thùng rác</strong>? Bạn có thể khôi phục bất cứ lúc nào.
+      </div>
+      <div class="hrm-popover-actions">
+        <button type="button" class="btn btn-secondary hrm-popover-btn-cancel" onclick="appEmployees.hideDeletePopover()">Hủy</button>
+        <button type="button" class="btn btn-accent hrm-popover-btn-confirm" id="btn-popover-confirm-del-${empId}">
+          <i class="fa-solid fa-trash-can"></i> Xóa
+        </button>
+      </div>
+      <div class="hrm-popover-arrow"></div>
+    `;
+
+    document.body.appendChild(popover);
+
+    if (triggerBtn) {
+      const rect = triggerBtn.getBoundingClientRect();
+      const popoverWidth = 280;
+      const popoverHeight = popover.offsetHeight || 135;
+
+      let left = rect.left - popoverWidth - 10;
+      let top = rect.top + (rect.height / 2) - (popoverHeight / 2);
+      let placement = 'left';
+
+      if (left < 10) {
+        left = rect.right + 10;
+        placement = 'right';
+      }
+
+      if (top < 10) top = 10;
+      if (top + popoverHeight > window.innerHeight - 10) {
+        top = window.innerHeight - popoverHeight - 10;
+      }
+
+      popover.style.left = `${left}px`;
+      popover.style.top = `${top}px`;
+      popover.setAttribute('data-placement', placement);
+    }
+
+    const confirmBtn = document.getElementById(`btn-popover-confirm-del-${empId}`);
+    if (confirmBtn) {
+      confirmBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.confirmDelete(empId, confirmBtn);
+      });
+    }
+
+    const outsideClickListener = (e) => {
+      if (!popover.contains(e.target) && triggerBtn && !triggerBtn.contains(e.target)) {
+        this.hideDeletePopover();
+      }
+    };
+    const escListener = (e) => {
+      if (e.key === 'Escape') {
+        this.hideDeletePopover();
+      }
+    };
+    const scrollListener = () => {
+      this.hideDeletePopover();
+    };
+
+    this._popoverCleanup = () => {
+      document.removeEventListener('click', outsideClickListener);
+      document.removeEventListener('keydown', escListener);
+      window.removeEventListener('scroll', scrollListener, true);
+    };
+
+    setTimeout(() => {
+      document.addEventListener('click', outsideClickListener);
+      document.addEventListener('keydown', escListener);
+      window.addEventListener('scroll', scrollListener, true);
+    }, 10);
+  },
+
+  hideDeletePopover() {
+    const existing = document.getElementById('hrm-emp-delete-popover');
+    if (existing) {
+      existing.remove();
+    }
+    if (this._popoverCleanup) {
+      this._popoverCleanup();
+      this._popoverCleanup = null;
+    }
+  },
+
+  async confirmDelete(empId, btnElement) {
+    if (btnElement) {
+      btnElement.disabled = true;
+      btnElement.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang xóa...';
     }
 
     try {
-      const res = await fetch(`/api/employees/${empId}`, { method: 'DELETE' });
+      const user = (typeof appAuth !== 'undefined' && typeof appAuth.getCurrentUser === 'function')
+        ? appAuth.getCurrentUser()
+        : (typeof appAuth !== 'undefined' && appAuth?.currentUser ? appAuth.currentUser : { employee_id: 'TH-1948', full_name: 'Huỳnh Thanh Long', role: 'ADMIN' });
+
+      const res = await fetch(`/api/employees/${empId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          operator_id: user?.employee_id || 'TH-1948',
+          operator_name: user?.full_name || 'Huỳnh Thanh Long',
+          operator_role: user?.role || 'ADMIN'
+        })
+      });
       const json = await res.json();
       if (json.success) {
-        utils.showToast(`Đã xóa thành công nhân sự ${empId}`, 'success');
+        utils.showToast(json.message || `Đã chuyển nhân sự ${empId} vào Thùng rác`, 'success');
+        this.hideDeletePopover();
         await appData.init();
         appDashboard.init();
+        if (typeof appTrash !== 'undefined') appTrash.render();
         this.applyFilters();
       } else {
-        utils.showToast('Không thể xóa nhân viên', 'error');
+        utils.showToast(json.message || 'Không thể xóa nhân viên', 'error');
+        if (btnElement) {
+          btnElement.disabled = false;
+          btnElement.innerHTML = '<i class="fa-solid fa-trash-can"></i> Xóa';
+        }
       }
     } catch (e) {
-      utils.showToast('Lỗi khi xóa nhân viên', 'error');
+      utils.showToast('Lỗi khi xóa nhân viên: ' + e.message, 'error');
+      if (btnElement) {
+        btnElement.disabled = false;
+        btnElement.innerHTML = '<i class="fa-solid fa-trash-can"></i> Xóa';
+      }
     }
+  },
+
+  async deleteEmployee(empId) {
+    this.showDeletePopover(window.event, empId);
   },
 
   exportFilteredExcel() {

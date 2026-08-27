@@ -5,19 +5,62 @@
 const appAuth = {
   currentUser: null,
   storageKey: 'hrm_trunghai_user_session',
+  tokenKey: 'hrm_trunghai_jwt_token',
 
   init() {
     this.attachEventListeners();
     this.checkSession();
   },
 
-  checkSession() {
+  getToken() {
+    return localStorage.getItem(this.tokenKey) || '';
+  },
+
+  getAuthHeaders() {
+    const token = this.getToken();
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return headers;
+  },
+
+  getCurrentUser() {
+    if (this.currentUser) return this.currentUser;
     try {
       const saved = localStorage.getItem(this.storageKey);
       if (saved) {
         this.currentUser = JSON.parse(saved);
+        return this.currentUser;
+      }
+    } catch (e) {}
+    return {
+      employee_id: 'TH-1948',
+      full_name: 'Huỳnh Thanh Long',
+      role: 'ADMIN'
+    };
+  },
+
+  async checkSession() {
+    try {
+      const saved = localStorage.getItem(this.storageKey);
+      const token = localStorage.getItem(this.tokenKey);
+      
+      if (saved && token) {
+        this.currentUser = JSON.parse(saved);
         this.applyUserSession(this.currentUser);
         this.hideLoginScreen();
+
+        // Asynchronously verify token with server
+        fetch('/api/auth/me', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(res => res.json()).then(data => {
+          if (!data.success) {
+            console.warn('Session expired or invalid, logging out...');
+            this.confirmLogout(false);
+          }
+        }).catch(err => console.warn('Auth check skipped:', err.message));
+
         return;
       }
     } catch (e) {
@@ -59,6 +102,9 @@ const appAuth = {
       if (json.success && json.user) {
         this.currentUser = json.user;
         localStorage.setItem(this.storageKey, JSON.stringify(json.user));
+        if (json.token) {
+          localStorage.setItem(this.tokenKey, json.token);
+        }
         this.applyUserSession(json.user);
         this.hideLoginScreen();
         utils.showToast(`Chào mừng ${json.user.full_name} (${json.user.role})!`, 'success');
@@ -89,18 +135,21 @@ const appAuth = {
     }
   },
 
-  confirmLogout() {
-    if (window.appLogs) {
+  confirmLogout(showNotice = true) {
+    if (window.appLogs && this.currentUser) {
       appLogs.recordClientLog('LOGOUT', 'Bảo mật', `Đăng xuất khỏi hệ thống (${this.currentUser?.full_name || ''})`);
     }
     this.closeLogoutModal();
     localStorage.removeItem(this.storageKey);
+    localStorage.removeItem(this.tokenKey);
     this.currentUser = null;
     this.showLoginScreen();
-    utils.showToast('Đã đăng xuất khỏi hệ thống', 'info');
+    if (showNotice) {
+      utils.showToast('Đã đăng xuất khỏi hệ thống', 'info');
+    }
   },
 
-  // Apply Role-Based UI Constraints
+  // Apply Role-Based UI Constraints (ADMIN vs USER)
   applyUserSession(user) {
     if (!user) return;
 
@@ -111,7 +160,7 @@ const appAuth = {
 
     const initials = user.full_name ? user.full_name.split(' ').map(n => n[0]).slice(-2).join('') : 'U';
     const isAdmin = user.role === 'ADMIN';
-    const displayRole = isAdmin ? 'Admin' : 'Nhân sự';
+    const displayRole = isAdmin ? 'Admin' : 'User';
 
     if (topUserName) topUserName.textContent = user.full_name;
     if (topUserRole) {
@@ -121,36 +170,48 @@ const appAuth = {
     if (topUserAvatar) topUserAvatar.textContent = initials;
 
     // 2. Sidebar user info
-    const sideUserName = document.querySelector('.sidebar-user .user-name');
-    const sideUserRole = document.querySelector('.sidebar-user .user-role');
-    const sideUserAvatar = document.querySelector('.sidebar-user .user-avatar');
+    const sideUserName = document.getElementById('sidebar-user-name') || document.querySelector('.sidebar-user .user-name');
+    const sideUserRole = document.getElementById('sidebar-user-role') || document.querySelector('.sidebar-user .user-role');
+    const sideUserAvatar = document.getElementById('sidebar-user-avatar') || document.querySelector('.sidebar-user .user-avatar');
 
     if (sideUserName) sideUserName.textContent = user.full_name;
     if (sideUserRole) sideUserRole.textContent = `${displayRole} - ${user.employee_id}`;
     if (sideUserAvatar) sideUserAvatar.textContent = initials;
 
-    // 3. Role-Based Navigation Filtering
+    // 3. Role-Based Navigation & Action Filtering
     const navAccounts = document.querySelector('.nav-item[data-view="accounts"]');
     const navLogs = document.querySelector('.nav-item[data-view="logs"]');
+    const navTrash = document.querySelector('.nav-item[data-view="trash"]');
     const navReports = document.querySelector('.nav-item[data-view="reports"]');
-    const btnAddEmp = document.getElementById('btn-open-add-modal');
+    const btnSheets = document.getElementById('btn-open-sheets-modal');
+    const btnCompany = document.getElementById('btn-company-settings');
     const btnClearLogs = document.getElementById('btn-clear-logs');
 
-    // Admin: Toàn quyền truy cập mọi phân hệ
     if (isAdmin) {
+      // ADMIN: Toàn quyền truy cập tất cả chức năng
       if (navAccounts) navAccounts.style.display = 'flex';
       if (navLogs) navLogs.style.display = 'flex';
+      if (navTrash) navTrash.style.display = 'flex';
       if (navReports) navReports.style.display = 'flex';
-      if (btnAddEmp) btnAddEmp.style.display = 'inline-flex';
+      if (btnSheets) btnSheets.style.display = 'inline-flex';
+      if (btnCompany) btnCompany.style.display = 'inline-flex';
       if (btnClearLogs) btnClearLogs.style.display = 'inline-flex';
-    } 
-    // Nhân sự (HR): Toàn quyền nghiệp vụ, xem nhật ký, ẩn trang Phân quyền
-    else {
+    } else {
+      // USER: Không hiển thị Nhật ký, Thùng rác, Phân quyền, Nút Google Sheet, Cài đặt Thương hiệu
       if (navAccounts) navAccounts.style.display = 'none';
-      if (navLogs) navLogs.style.display = 'flex';
+      if (navLogs) navLogs.style.display = 'none';
+      if (navTrash) navTrash.style.display = 'none';
       if (navReports) navReports.style.display = 'flex';
-      if (btnAddEmp) btnAddEmp.style.display = 'inline-flex';
-      if (btnClearLogs) btnClearLogs.style.display = 'none'; // Chỉ Admin mới được xóa lịch sử
+      if (btnSheets) btnSheets.style.display = 'none';
+      if (btnCompany) btnCompany.style.display = 'none';
+      if (btnClearLogs) btnClearLogs.style.display = 'none';
+
+      // If user is currently inside a restricted view, redirect back to Dashboard
+      const currentActivePanel = document.querySelector('.view-panel.active');
+      if (currentActivePanel && ['view-accounts', 'view-logs', 'view-trash'].includes(currentActivePanel.id)) {
+        const dashboardNav = document.querySelector('.sidebar-nav .nav-item[data-view="dashboard"]');
+        if (dashboardNav) dashboardNav.click();
+      }
     }
   },
 
