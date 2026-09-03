@@ -38,19 +38,19 @@ app.use(helmet({
 // CORS Configuration
 app.use(cors());
 
-// Rate Limiter for Login (10 attempts per 15 mins to prevent Brute-force)
+// Rate Limiter for Login (100 attempts per 15 mins to prevent Brute-force while allowing development/testing)
 const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 15,
+    max: 100,
     message: { success: false, message: 'Đã vượt quá số lần thử đăng nhập cho phép. Vui lòng thử lại sau 15 phút.' },
     standardHeaders: true,
     legacyHeaders: false
 });
 
-// General API Rate Limiter (600 requests per 5 minutes per IP)
+// General API Rate Limiter (1200 requests per 5 minutes per IP)
 const apiLimiter = rateLimit({
     windowMs: 5 * 60 * 1000,
-    max: 600,
+    max: 1200,
     message: { success: false, message: 'Tần suất gửi yêu cầu quá cao. Vui lòng thử lại sau giây lát.' },
     standardHeaders: true,
     legacyHeaders: false
@@ -123,17 +123,87 @@ function optionalAuth(req, res, next) {
 // Path to JSON database
 const DB_PATH = path.join(__dirname, 'database_schema.json');
 
+// Ensure default admin & demo accounts exist in database
+function ensureDefaultAccounts(db) {
+    if (!db || typeof db !== 'object') return;
+    if (!db.tables) db.tables = {};
+    if (!db.tables['11_System_Accounts']) db.tables['11_System_Accounts'] = [];
+
+    const accounts = db.tables['11_System_Accounts'];
+    const adminHash = bcrypt.hashSync('123456', SALT_ROUNDS);
+
+    // 1. Ensure Super Admin account (Huỳnh Thanh Long)
+    let adminAcc = accounts.find(a => 
+        (a.employee_id && (a.employee_id === 'TH-0001' || a.employee_id === 'TH-1948')) ||
+        (a.account_email && (a.account_email.toLowerCase() === 'longht@trunghaico.vn' || a.account_email.toLowerCase() === 'admin@trunghai.vn')) ||
+        (a.username && (a.username.toLowerCase() === 'longht' || a.username.toLowerCase() === 'admin'))
+    );
+
+    if (adminAcc) {
+        adminAcc.account_id = adminAcc.account_id || 'ACC-TH0001';
+        adminAcc.employee_id = adminAcc.employee_id || 'TH-0001';
+        adminAcc.username = adminAcc.username || 'longht';
+        adminAcc.full_name = adminAcc.full_name || 'Huỳnh Thanh Long';
+        adminAcc.account_email = adminAcc.account_email || 'longht@trunghaico.vn';
+        adminAcc.role = 'ADMIN';
+        adminAcc.account_status = 'Kích hoạt';
+        if (!adminAcc.password) {
+            adminAcc.password = adminHash;
+        }
+    } else {
+        accounts.unshift({
+            account_id: 'ACC-TH0001',
+            employee_id: 'TH-0001',
+            username: 'longht',
+            full_name: 'Huỳnh Thanh Long',
+            account_email: 'longht@trunghaico.vn',
+            role: 'ADMIN',
+            account_status: 'Kích hoạt',
+            password: adminHash,
+            created_at: new Date().toISOString()
+        });
+    }
+
+    // 2. Ensure Standard User demo account (Trần Minh Đức)
+    let userAcc = accounts.find(a => 
+        (a.employee_id && a.employee_id === 'TH-0003') ||
+        (a.account_email && a.account_email.toLowerCase() === 'test@trunghaico.vn')
+    );
+
+    if (userAcc) {
+        userAcc.account_email = userAcc.account_email || 'test@trunghaico.vn';
+        userAcc.role = userAcc.role || 'USER';
+        userAcc.account_status = 'Kích hoạt';
+    } else {
+        accounts.push({
+            account_id: 'ACC-TH0003',
+            employee_id: 'TH-0003',
+            username: 'test',
+            full_name: 'Trần Minh Đức',
+            account_email: 'test@trunghaico.vn',
+            role: 'USER',
+            account_status: 'Kích hoạt',
+            password: adminHash,
+            created_at: new Date().toISOString()
+        });
+    }
+}
+
 // Helper to load DB
 function loadDatabase() {
     try {
         if (fs.existsSync(DB_PATH)) {
             const raw = fs.readFileSync(DB_PATH, 'utf-8');
-            return JSON.parse(raw);
+            const db = JSON.parse(raw);
+            ensureDefaultAccounts(db);
+            return db;
         }
     } catch (e) {
         console.error('Error reading database_schema.json:', e);
     }
-    return { tables: {} };
+    const db = { tables: {} };
+    ensureDefaultAccounts(db);
+    return db;
 }
 
 // Path to Excel database
@@ -2748,13 +2818,33 @@ app.post('/api/login', loginLimiter, async (req, res) => {
 
         const db = loadDatabase();
         const accounts = db.tables['11_System_Accounts'] || [];
+        const employees = db.tables['03_Employees'] || [];
+        const contacts = db.tables['04_Contacts_Addresses'] || [];
+
+        const q = username.toLowerCase().trim();
         
-        // Find account by username, employee_id, or account_email
-        const userAcc = accounts.find(a => 
-            (a.username && a.username.toLowerCase() === username.toLowerCase().trim()) ||
-            (a.employee_id && a.employee_id.toLowerCase() === username.toLowerCase().trim()) ||
-            (a.account_email && a.account_email.toLowerCase() === username.toLowerCase().trim())
+        // Find account by username, employee_id, account_email, or admin aliases
+        let userAcc = accounts.find(a => 
+            (a.username && a.username.toLowerCase().trim() === q) ||
+            (a.employee_id && a.employee_id.toLowerCase().trim() === q) ||
+            (a.account_email && a.account_email.toLowerCase().trim() === q) ||
+            (a.role === 'ADMIN' && ['admin', 'longht', 'longht@trunghaico.vn', 'admin@trunghai.vn', 'admin@trunghaico.vn'].includes(q))
         );
+
+        // Fallback: match by employee profile work_email or mobile_phone
+        if (!userAcc) {
+            const matchedEmp = employees.find(e => 
+                (e.employee_id && e.employee_id.toLowerCase().trim() === q) ||
+                (e.work_email && e.work_email.toLowerCase().trim() === q)
+            ) || contacts.find(c => 
+                (c.employee_id && c.employee_id.toLowerCase().trim() === q) ||
+                (c.work_email && c.work_email.toLowerCase().trim() === q)
+            );
+
+            if (matchedEmp) {
+                userAcc = accounts.find(a => a.employee_id === matchedEmp.employee_id);
+            }
+        }
 
         if (!userAcc) {
             recordLog(db, {

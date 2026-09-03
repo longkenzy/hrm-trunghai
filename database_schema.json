@@ -78523,8 +78523,8 @@
       {
         "employee_id": "TH-0001",
         "full_name": "Huỳnh Thanh Long",
-        "work_email": "admin@trunghai.vn",
-        "mobile_phone": "0901234567",
+        "work_email": "longht@trunghaico.vn",
+        "mobile_phone": "0909194888",
         "job_title": "Giám Đốc Quản Trị Hệ Thống",
         "department_id": "BGD",
         "department_name": "Ban Giám Đốc",
@@ -78535,6 +78535,27 @@
       }
     ],
     "04_Contacts_Addresses": [
+      {
+        "employee_id": "TH-0001",
+        "full_name": "Huỳnh Thanh Long",
+        "mobile_phone": "0909194888",
+        "home_phone": "02438888999",
+        "other_phone": "",
+        "work_email": "longht@trunghaico.vn",
+        "personal_email": "longht.trunghai@gmail.com",
+        "permanent_address_full": "Tòa nhà Trung Hải, Cầu Giấy, Hà Nội",
+        "permanent_country": "Việt Nam",
+        "permanent_province": "Hà Nội",
+        "permanent_district": "Cầu Giấy",
+        "permanent_ward": "Dịch Vọng Hậu",
+        "permanent_street": "Duy Tân",
+        "current_address_full": "Tòa nhà Trung Hải, Cầu Giấy, Hà Nội",
+        "current_country": "Việt Nam",
+        "current_province": "Hà Nội",
+        "current_district": "Cầu Giấy",
+        "current_ward": "Dịch Vọng Hậu",
+        "current_street": "Duy Tân"
+      },
       {
         "employee_id": "TH-2000",
         "full_name": "Bùi Thị Thu",
@@ -168063,7 +168084,7 @@
         "account_email": "test@trunghaico.vn",
         "role": "USER",
         "account_status": "Kích hoạt",
-        "password": "$2b$10$GII0oDLlZMLIZWcrUbtZ7ecYZypNiiATl7SMoyx6vY2h7bslknuZi"
+        "password": "$2b$10$2z4Juvw6sRT8oYLJGa987OHmXBNptxp5JqyNAURSy8jWsk9a4ODKC"
       },
       {
         "account_id": "ACC-123",
@@ -168072,17 +168093,18 @@
         "account_email": "123@trunghaico.vn",
         "account_status": "Kích hoạt",
         "role": "USER",
-        "password": "123456"
+        "password": "$2b$10$1vMgMnfJxoNNlIF5muOM..cCa7nEHtwIMVFJu4tnbZbvdwiUgGUOC"
       },
       {
-        "account_id": "ACC-001",
+        "account_id": "ACC-TH0001",
         "employee_id": "TH-0001",
-        "username": "admin",
+        "username": "longht",
         "full_name": "Huỳnh Thanh Long",
+        "account_email": "longht@trunghaico.vn",
         "role": "ADMIN",
         "account_status": "Kích hoạt",
-        "password": "$2b$10$EHxkXkJjlqCUwym6s2eh7.CvHhFHgJTDmD.ega3NhDV1.Cp.3beO2",
-        "created_at": "2026-08-27T02:37:56.742Z"
+        "password": "$2b$10$2z4Juvw6sRT8oYLJGa987OHmXBNptxp5JqyNAURSy8jWsk9a4ODKC",
+        "created_at": "2026-09-03T03:25:41.606Z"
       }
     ],
     "12_Activity_Logs": [
@@ -168161,6 +168183,292 @@
       }
     ],
     "12_System_Logs": [
+      {
+        "log_id": "LOG-1788406109572-91",
+        "timestamp": "2026-09-03T03:28:29.572Z",
+        "user_id": "TH-0001",
+        "user_name": "Huỳnh Thanh Long",
+        "user_role": "ADMIN",
+        "action_type": "LOGIN",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thành công vào hệ thống (Huỳnh Thanh Long - Quyền: ADMIN)",
+        "ip_address": "::1"
+      },
+      {
+        "log_id": "LOG-1788406057129-236",
+        "timestamp": "2026-09-03T03:27:37.129Z",
+        "user_id": "TH-0001",
+        "user_name": "Huỳnh Thanh Long",
+        "user_role": "ADMIN",
+        "action_type": "LOGIN",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thành công vào hệ thống (Huỳnh Thanh Long - Quyền: ADMIN)",
+        "ip_address": "::1"
+      },
+      {
+        "log_id": "LOG-1788406025498-941",
+        "timestamp": "2026-09-03T03:27:05.498Z",
+        "user_id": "TH-0001",
+        "user_name": "Huỳnh Thanh Long",
+        "user_role": "ADMIN",
+        "action_type": "LOGIN",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thành công vào hệ thống (Huỳnh Thanh Long - Quyền: ADMIN)",
+        "ip_address": "::1"
+      },
+      {
+        "log_id": "LOG-1788406001537-721",
+        "timestamp": "2026-09-03T03:26:41.537Z",
+        "user_id": "123",
+        "user_name": "Hoàng Văn B",
+        "user_role": "USER",
+        "action_type": "LOGIN",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thành công vào hệ thống (Hoàng Văn B - Quyền: USER)",
+        "ip_address": "::1"
+      },
+      {
+        "log_id": "LOG-1788406001114-645",
+        "timestamp": "2026-09-03T03:26:41.114Z",
+        "user_id": "TH-0003",
+        "user_name": "Trần Minh Đức",
+        "user_role": "USER",
+        "action_type": "LOGIN",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thành công vào hệ thống (Trần Minh Đức - Quyền: USER)",
+        "ip_address": "::1"
+      },
+      {
+        "log_id": "LOG-1788406000693-721",
+        "timestamp": "2026-09-03T03:26:40.694Z",
+        "user_id": "TH-0001",
+        "user_name": "Huỳnh Thanh Long",
+        "user_role": "ADMIN",
+        "action_type": "LOGIN",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thành công vào hệ thống (Huỳnh Thanh Long - Quyền: ADMIN)",
+        "ip_address": "::1"
+      },
+      {
+        "log_id": "LOG-1788406000258-867",
+        "timestamp": "2026-09-03T03:26:40.258Z",
+        "user_id": "TH-0001",
+        "user_name": "Huỳnh Thanh Long",
+        "user_role": "ADMIN",
+        "action_type": "LOGIN",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thành công vào hệ thống (Huỳnh Thanh Long - Quyền: ADMIN)",
+        "ip_address": "::1"
+      },
+      {
+        "log_id": "LOG-1788405999838-863",
+        "timestamp": "2026-09-03T03:26:39.838Z",
+        "user_id": "TH-0001",
+        "user_name": "Huỳnh Thanh Long",
+        "user_role": "ADMIN",
+        "action_type": "LOGIN",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thành công vào hệ thống (Huỳnh Thanh Long - Quyền: ADMIN)",
+        "ip_address": "::1"
+      },
+      {
+        "log_id": "LOG-1788405999392-171",
+        "timestamp": "2026-09-03T03:26:39.392Z",
+        "user_id": "TH-0001",
+        "user_name": "Huỳnh Thanh Long",
+        "user_role": "ADMIN",
+        "action_type": "LOGIN",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thành công vào hệ thống (Huỳnh Thanh Long - Quyền: ADMIN)",
+        "ip_address": "::1"
+      },
+      {
+        "log_id": "LOG-1788405998855-437",
+        "timestamp": "2026-09-03T03:26:38.855Z",
+        "user_id": "TH-0001",
+        "user_name": "Huỳnh Thanh Long",
+        "user_role": "ADMIN",
+        "action_type": "LOGIN",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thành công vào hệ thống (Huỳnh Thanh Long - Quyền: ADMIN)",
+        "ip_address": "::1"
+      },
+      {
+        "log_id": "LOG-1788405998610-56",
+        "timestamp": "2026-09-03T03:26:38.610Z",
+        "user_id": "TH-0001",
+        "user_name": "Huỳnh Thanh Long",
+        "user_role": "ADMIN",
+        "action_type": "LOGIN",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thành công vào hệ thống (Huỳnh Thanh Long - Quyền: ADMIN)",
+        "ip_address": "::1"
+      },
+      {
+        "log_id": "LOG-1788405981225-381",
+        "timestamp": "2026-09-03T03:26:21.225Z",
+        "user_id": "TH-0001",
+        "user_name": "Huỳnh Thanh Long",
+        "user_role": "ADMIN",
+        "action_type": "LOGIN",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thành công vào hệ thống (Huỳnh Thanh Long - Quyền: ADMIN)",
+        "ip_address": "::1"
+      },
+      {
+        "log_id": "LOG-1788405980816-473",
+        "timestamp": "2026-09-03T03:26:20.816Z",
+        "user_id": "TH-0001",
+        "user_name": "Huỳnh Thanh Long",
+        "user_role": "ADMIN",
+        "action_type": "LOGIN",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thành công vào hệ thống (Huỳnh Thanh Long - Quyền: ADMIN)",
+        "ip_address": "::1"
+      },
+      {
+        "log_id": "LOG-1788405980698-861",
+        "timestamp": "2026-09-03T03:26:20.698Z",
+        "user_id": "TH-0001",
+        "user_name": "Huỳnh Thanh Long",
+        "user_role": "ADMIN",
+        "action_type": "LOGIN",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thành công vào hệ thống (Huỳnh Thanh Long - Quyền: ADMIN)",
+        "ip_address": "::1"
+      },
+      {
+        "log_id": "LOG-1788405952876-594",
+        "timestamp": "2026-09-03T03:25:52.876Z",
+        "user_id": "123",
+        "user_name": "Hoàng Văn B",
+        "user_role": "USER",
+        "action_type": "LOGIN",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thành công vào hệ thống (Hoàng Văn B - Quyền: USER)",
+        "ip_address": "::1"
+      },
+      {
+        "log_id": "LOG-1788405951762-429",
+        "timestamp": "2026-09-03T03:25:51.762Z",
+        "user_id": "TH-0003",
+        "user_name": "Trần Minh Đức",
+        "user_role": "USER",
+        "action_type": "LOGIN",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thành công vào hệ thống (Trần Minh Đức - Quyền: USER)",
+        "ip_address": "::1"
+      },
+      {
+        "log_id": "LOG-1788405951131-246",
+        "timestamp": "2026-09-03T03:25:51.131Z",
+        "user_id": "TH-0001",
+        "user_name": "Huỳnh Thanh Long",
+        "user_role": "ADMIN",
+        "action_type": "LOGIN",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thành công vào hệ thống (Huỳnh Thanh Long - Quyền: ADMIN)",
+        "ip_address": "::1"
+      },
+      {
+        "log_id": "LOG-1788405950441-440",
+        "timestamp": "2026-09-03T03:25:50.441Z",
+        "user_id": "TH-0001",
+        "user_name": "Huỳnh Thanh Long",
+        "user_role": "ADMIN",
+        "action_type": "LOGIN",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thành công vào hệ thống (Huỳnh Thanh Long - Quyền: ADMIN)",
+        "ip_address": "::1"
+      },
+      {
+        "log_id": "LOG-1788405949847-388",
+        "timestamp": "2026-09-03T03:25:49.847Z",
+        "user_id": "admin",
+        "user_name": "admin",
+        "user_role": "GUEST",
+        "action_type": "LOGIN_FAIL",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thất bại: Tài khoản \"admin\" không tồn tại",
+        "ip_address": "::1"
+      },
+      {
+        "log_id": "LOG-1788405949340-900",
+        "timestamp": "2026-09-03T03:25:49.340Z",
+        "user_id": "TH-0001",
+        "user_name": "Huỳnh Thanh Long",
+        "user_role": "ADMIN",
+        "action_type": "LOGIN",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thành công vào hệ thống (Huỳnh Thanh Long - Quyền: ADMIN)",
+        "ip_address": "::1"
+      },
+      {
+        "log_id": "LOG-1788405948728-92",
+        "timestamp": "2026-09-03T03:25:48.728Z",
+        "user_id": "TH-0001",
+        "user_name": "Huỳnh Thanh Long",
+        "user_role": "ADMIN",
+        "action_type": "LOGIN",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thành công vào hệ thống (Huỳnh Thanh Long - Quyền: ADMIN)",
+        "ip_address": "::1"
+      },
+      {
+        "log_id": "LOG-1788405948558-774",
+        "timestamp": "2026-09-03T03:25:48.558Z",
+        "user_id": "TH-0001",
+        "user_name": "Huỳnh Thanh Long",
+        "user_role": "ADMIN",
+        "action_type": "LOGIN",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thành công vào hệ thống (Huỳnh Thanh Long - Quyền: ADMIN)",
+        "ip_address": "::1"
+      },
+      {
+        "log_id": "LOG-1788405944290-759",
+        "timestamp": "2026-09-03T03:25:44.290Z",
+        "user_id": "TH-0001",
+        "user_name": "Huỳnh Thanh Long",
+        "user_role": "ADMIN",
+        "action_type": "LOGIN",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thành công vào hệ thống (Huỳnh Thanh Long - Quyền: ADMIN)",
+        "ip_address": "::1"
+      },
+      {
+        "log_id": "LOG-1788405922870-432",
+        "timestamp": "2026-09-03T03:25:22.870Z",
+        "user_id": "longht@trunghaico.vn",
+        "user_name": "longht@trunghaico.vn",
+        "user_role": "GUEST",
+        "action_type": "LOGIN_FAIL",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thất bại: Tài khoản \"longht@trunghaico.vn\" không tồn tại",
+        "ip_address": "::1"
+      },
+      {
+        "log_id": "LOG-1788405785840-687",
+        "timestamp": "2026-09-03T03:23:05.840Z",
+        "user_id": "longht@trunghaico.vn",
+        "user_name": "longht@trunghaico.vn",
+        "user_role": "GUEST",
+        "action_type": "LOGIN_FAIL",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thất bại: Tài khoản \"longht@trunghaico.vn\" không tồn tại",
+        "ip_address": "::1"
+      },
+      {
+        "log_id": "LOG-1788405779947-768",
+        "timestamp": "2026-09-03T03:22:59.947Z",
+        "user_id": "longht@trunghaico.vn",
+        "user_name": "longht@trunghaico.vn",
+        "user_role": "GUEST",
+        "action_type": "LOGIN_FAIL",
+        "module": "Bảo mật",
+        "description": "Đăng nhập thất bại: Tài khoản \"longht@trunghaico.vn\" không tồn tại",
+        "ip_address": "::1"
+      },
       {
         "log_id": "LOG-1787816221292-230",
         "timestamp": "2026-08-27T07:37:01.292Z",
