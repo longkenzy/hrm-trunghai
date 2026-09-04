@@ -391,7 +391,7 @@ export async function onRequest(context) {
     }
 
     // -------------------------------------------------------------
-    // Route: Employee CRUD (/api/employees)
+    // Route: Employee CRUD (/api/employees/*)
     // -------------------------------------------------------------
     if (path === "employees" || path.startsWith("employees/")) {
       const parts = path.split("/");
@@ -426,15 +426,70 @@ export async function onRequest(context) {
         return jsonResponse({ success: true, message: "Lưu thông tin nhân viên thành công!" });
       }
 
-      // DELETE /api/employees/:id (Move to trash)
-      if (method === "DELETE" && empId) {
+      // DELETE /api/employees/all (Delete All Employees)
+      if (method === "DELETE" && empId === "all") {
+        const body = await request.json().catch(() => ({}));
+        const isPermanent = body.permanent === true;
         const data = await loadAllFromD1(db);
         const employees = data.tables["03_Employees"] || [];
-        const trash = data.tables["13_Recycle_Bin"] || [];
+        let trash = data.tables["13_Recycle_Bin"] || [];
+        const count = employees.length;
+
+        if (!isPermanent) {
+          const depts = data.tables["01_Departments"] || [];
+          const positions = data.tables["02_Positions"] || [];
+          const deptMap = Object.fromEntries(depts.map(d => [d.department_id, d.department_name]));
+          const posMap = Object.fromEntries(positions.map(p => [p.position_id, p.position_name]));
+
+          const now = new Date().toISOString();
+          const moved = employees.map(e => ({
+            ...e,
+            department_name: e.department_name || deptMap[e.department_id] || e.department_id,
+            position_name: e.position_name || posMap[e.position_id] || e.job_title || e.position_id,
+            deleted_at: now,
+            deleted_by_name: body.operator_name || "Quản trị viên"
+          }));
+          trash = [...moved, ...trash];
+          await saveTableToD1(db, "13_Recycle_Bin", trash);
+        }
+
+        await saveTableToD1(db, "03_Employees", []);
+        await saveTableToD1(db, "00_Master_Profiles", []);
+        if (!body.keep_accounts) {
+          const accounts = (data.tables["11_System_Accounts"] || []).filter(a => a.role === "ADMIN" || a.username === "admin");
+          await saveTableToD1(db, "11_System_Accounts", accounts);
+        }
+
+        return jsonResponse({
+          success: true,
+          count,
+          message: isPermanent ? `Đã xóa vĩnh viễn ${count} nhân sự!` : `Đã chuyển ${count} nhân sự vào thùng rác!`
+        });
+      }
+
+      // DELETE /api/employees/:id (Move to trash)
+      if (method === "DELETE" && empId) {
+        const body = await request.json().catch(() => ({}));
+        const data = await loadAllFromD1(db);
+        const employees = data.tables["03_Employees"] || [];
+        let trash = data.tables["13_Recycle_Bin"] || [];
 
         const target = employees.find(e => e.employee_id === empId);
         if (target) {
-          trash.push({ ...target, deleted_at: new Date().toISOString() });
+          const depts = data.tables["01_Departments"] || [];
+          const positions = data.tables["02_Positions"] || [];
+          const dept = depts.find(d => d.department_id === target.department_id);
+          const pos = positions.find(p => p.position_id === target.position_id);
+
+          const trashItem = {
+            ...target,
+            department_name: target.department_name || dept?.department_name || target.department_id,
+            position_name: target.position_name || pos?.position_name || target.job_title || target.position_id,
+            deleted_at: new Date().toISOString(),
+            deleted_by_name: body.operator_name || "Quản trị viên"
+          };
+
+          trash.unshift(trashItem);
           const newEmps = employees.filter(e => e.employee_id !== empId);
           await saveTableToD1(db, "03_Employees", newEmps);
           await saveTableToD1(db, "00_Master_Profiles", newEmps);
@@ -456,10 +511,12 @@ export async function onRequest(context) {
       let trash = data.tables["13_Recycle_Bin"] || [];
       let employees = data.tables["03_Employees"] || [];
 
+      // GET /api/trash (Returns both data and trash array)
       if (method === "GET" && !action) {
-        return jsonResponse({ success: true, trash });
+        return jsonResponse({ success: true, data: trash, trash });
       }
 
+      // POST /api/trash/restore/:id
       if (action === "restore" && targetId) {
         const item = trash.find(t => t.employee_id === targetId);
         if (item) {
@@ -472,15 +529,299 @@ export async function onRequest(context) {
         return jsonResponse({ success: true, message: `Đã khôi phục nhân viên ${targetId}!` });
       }
 
+      // POST /api/trash/restore-bulk
+      if (action === "restore-bulk" && method === "POST") {
+        const body = await request.json().catch(() => ({}));
+        const ids = new Set(body.employee_ids || []);
+        const restored = trash.filter(t => ids.has(t.employee_id));
+        trash = trash.filter(t => !ids.has(t.employee_id));
+        employees.push(...restored);
+        await saveTableToD1(db, "13_Recycle_Bin", trash);
+        await saveTableToD1(db, "03_Employees", employees);
+        await saveTableToD1(db, "00_Master_Profiles", employees);
+        return jsonResponse({ success: true, message: `Đã khôi phục ${restored.length} nhân viên!` });
+      }
+
+      // DELETE or POST /api/trash/permanent/:id
       if (action === "permanent" && targetId) {
         trash = trash.filter(t => t.employee_id !== targetId);
         await saveTableToD1(db, "13_Recycle_Bin", trash);
         return jsonResponse({ success: true, message: `Đã xóa vĩnh viễn nhân viên ${targetId}!` });
       }
 
+      // DELETE or POST /api/trash/permanent-bulk
+      if (action === "permanent-bulk") {
+        const body = await request.json().catch(() => ({}));
+        const ids = new Set(body.employee_ids || []);
+        trash = trash.filter(t => !ids.has(t.employee_id));
+        await saveTableToD1(db, "13_Recycle_Bin", trash);
+        return jsonResponse({ success: true, message: "Đã xóa vĩnh viễn các nhân viên đã chọn!" });
+      }
+
+      // DELETE or POST /api/trash/empty
       if (action === "empty") {
         await saveTableToD1(db, "13_Recycle_Bin", []);
         return jsonResponse({ success: true, message: "Đã dọn sạch thùng rác!" });
+      }
+    }
+
+    // -------------------------------------------------------------
+    // Route: Companies CRUD (/api/companies/*)
+    // -------------------------------------------------------------
+    if (path === "companies" || path.startsWith("companies/")) {
+      const parts = path.split("/");
+      const compId = parts[1] ? decodeURIComponent(parts[1]) : null;
+      const data = await loadAllFromD1(db);
+      let companies = data.tables["00_Companies"] || [];
+
+      // GET /api/companies
+      if (method === "GET") {
+        if (compId) {
+          const comp = companies.find(c => c.company_id === compId);
+          if (!comp) return jsonResponse({ success: false, message: "Không tìm thấy công ty" }, 404);
+          return jsonResponse({ success: true, company: comp });
+        }
+        return jsonResponse({ success: true, companies });
+      }
+
+      // POST /api/companies (Create)
+      if (method === "POST") {
+        const body = await request.json().catch(() => ({}));
+        const id = (body.company_id || `CP-${Date.now()}`).trim();
+        const newComp = {
+          company_id: id,
+          company_name: body.company_name || "",
+          tax_code: body.tax_code || "",
+          phone: body.phone || "",
+          email: body.email || "",
+          address: body.address || "",
+          status: body.status || "Hoạt động",
+          created_at: new Date().toISOString()
+        };
+        const existingIdx = companies.findIndex(c => c.company_id === id);
+        if (existingIdx >= 0) {
+          companies[existingIdx] = { ...companies[existingIdx], ...newComp };
+        } else {
+          companies.push(newComp);
+        }
+        await saveTableToD1(db, "00_Companies", companies);
+        return jsonResponse({ success: true, company: newComp, message: "Tạo công ty thành công!" });
+      }
+
+      // PUT /api/companies/:id (Update)
+      if (method === "PUT" && compId) {
+        const body = await request.json().catch(() => ({}));
+        const idx = companies.findIndex(c => c.company_id === compId);
+        if (idx < 0) return jsonResponse({ success: false, message: "Không tìm thấy công ty để cập nhật" }, 404);
+        companies[idx] = { ...companies[idx], ...body, company_id: compId, updated_at: new Date().toISOString() };
+        await saveTableToD1(db, "00_Companies", companies);
+        return jsonResponse({ success: true, company: companies[idx], message: "Cập nhật công ty thành công!" });
+      }
+
+      // DELETE /api/companies/:id
+      if (method === "DELETE" && compId) {
+        companies = companies.filter(c => c.company_id !== compId);
+        await saveTableToD1(db, "00_Companies", companies);
+        return jsonResponse({ success: true, message: `Đã xóa công ty ${compId} thành công!` });
+      }
+    }
+
+    // -------------------------------------------------------------
+    // Route: Departments CRUD (/api/departments/*)
+    // -------------------------------------------------------------
+    if (path === "departments" || path.startsWith("departments/")) {
+      const parts = path.split("/");
+      const deptId = parts[1] ? decodeURIComponent(parts[1]) : null;
+      const data = await loadAllFromD1(db);
+      let departments = data.tables["01_Departments"] || [];
+
+      // GET /api/departments
+      if (method === "GET") {
+        if (deptId) {
+          const dept = departments.find(d => d.department_id === deptId);
+          if (!dept) return jsonResponse({ success: false, message: "Không tìm thấy phòng ban" }, 404);
+          return jsonResponse({ success: true, department: dept });
+        }
+        return jsonResponse({ success: true, departments });
+      }
+
+      // POST /api/departments (Create)
+      if (method === "POST") {
+        const body = await request.json().catch(() => ({}));
+        const id = (body.department_id || `DEPT-${Date.now()}`).trim();
+        const newDept = {
+          department_id: id,
+          department_name: body.department_name || "",
+          company_id: body.company_id || "",
+          parent_dept_id: body.parent_dept_id || "",
+          manager_id: body.manager_id || "",
+          status: body.status || "Hoạt động",
+          created_at: new Date().toISOString()
+        };
+        const existingIdx = departments.findIndex(d => d.department_id === id);
+        if (existingIdx >= 0) {
+          departments[existingIdx] = { ...departments[existingIdx], ...newDept };
+        } else {
+          departments.push(newDept);
+        }
+        await saveTableToD1(db, "01_Departments", departments);
+        return jsonResponse({ success: true, department: newDept, message: "Tạo phòng ban thành công!" });
+      }
+
+      // PUT /api/departments/:id (Update)
+      if (method === "PUT" && deptId) {
+        const body = await request.json().catch(() => ({}));
+        const idx = departments.findIndex(d => d.department_id === deptId);
+        if (idx < 0) return jsonResponse({ success: false, message: "Không tìm thấy phòng ban để cập nhật" }, 404);
+        departments[idx] = { ...departments[idx], ...body, department_id: deptId, updated_at: new Date().toISOString() };
+        await saveTableToD1(db, "01_Departments", departments);
+        return jsonResponse({ success: true, department: departments[idx], message: "Cập nhật phòng ban thành công!" });
+      }
+
+      // DELETE /api/departments/:id
+      if (method === "DELETE" && deptId) {
+        departments = departments.filter(d => d.department_id !== deptId);
+        await saveTableToD1(db, "01_Departments", departments);
+        return jsonResponse({ success: true, message: `Đã xóa phòng ban ${deptId} thành công!` });
+      }
+    }
+
+    // -------------------------------------------------------------
+    // Route: Positions CRUD (/api/positions/*)
+    // -------------------------------------------------------------
+    if (path === "positions" || path.startsWith("positions/")) {
+      const parts = path.split("/");
+      const posId = parts[1] ? decodeURIComponent(parts[1]) : null;
+      const data = await loadAllFromD1(db);
+      let positions = data.tables["02_Positions"] || [];
+
+      // GET /api/positions
+      if (method === "GET") {
+        if (posId) {
+          const pos = positions.find(p => p.position_id === posId);
+          if (!pos) return jsonResponse({ success: false, message: "Không tìm thấy vị trí" }, 404);
+          return jsonResponse({ success: true, position: pos });
+        }
+        return jsonResponse({ success: true, positions });
+      }
+
+      // POST /api/positions (Create)
+      if (method === "POST") {
+        const body = await request.json().catch(() => ({}));
+        const id = (body.position_id || `POS-${Date.now()}`).trim();
+        const newPos = {
+          position_id: id,
+          position_name: body.position_name || "",
+          department_id: body.department_id || "",
+          level: body.level || "Cấp 1",
+          status: body.status || "Hoạt động",
+          created_at: new Date().toISOString()
+        };
+        const existingIdx = positions.findIndex(p => p.position_id === id);
+        if (existingIdx >= 0) {
+          positions[existingIdx] = { ...positions[existingIdx], ...newPos };
+        } else {
+          positions.push(newPos);
+        }
+        await saveTableToD1(db, "02_Positions", positions);
+        return jsonResponse({ success: true, position: newPos, message: "Tạo vị trí thành công!" });
+      }
+
+      // PUT /api/positions/:id (Update)
+      if (method === "PUT" && posId) {
+        const body = await request.json().catch(() => ({}));
+        const idx = positions.findIndex(p => p.position_id === posId);
+        if (idx < 0) return jsonResponse({ success: false, message: "Không tìm thấy vị trí để cập nhật" }, 404);
+        positions[idx] = { ...positions[idx], ...body, position_id: posId, updated_at: new Date().toISOString() };
+        await saveTableToD1(db, "02_Positions", positions);
+        return jsonResponse({ success: true, position: positions[idx], message: "Cập nhật vị trí thành công!" });
+      }
+
+      // DELETE /api/positions/:id
+      if (method === "DELETE" && posId) {
+        positions = positions.filter(p => p.position_id !== posId);
+        await saveTableToD1(db, "02_Positions", positions);
+        return jsonResponse({ success: true, message: `Đã xóa vị trí ${posId} thành công!` });
+      }
+    }
+
+    // -------------------------------------------------------------
+    // Route: Accounts CRUD (/api/accounts/*)
+    // -------------------------------------------------------------
+    if (path === "accounts" || path.startsWith("accounts/")) {
+      const parts = path.split("/");
+      const accId = parts[1] ? decodeURIComponent(parts[1]) : null;
+      const subAction = parts[2] ? decodeURIComponent(parts[2]) : null;
+      const data = await loadAllFromD1(db);
+      let accounts = data.tables["11_System_Accounts"] || [];
+
+      // POST /api/accounts/:id/reset-password
+      if (subAction === "reset-password" && method === "POST" && accId) {
+        const body = await request.json().catch(() => ({}));
+        const newPassword = body.new_password || "123456";
+        const idx = accounts.findIndex(a => a.account_id === accId || a.employee_id === accId);
+        if (idx >= 0) {
+          accounts[idx] = { ...accounts[idx], password: newPassword, updated_at: new Date().toISOString() };
+          await saveTableToD1(db, "11_System_Accounts", accounts);
+        }
+        return jsonResponse({ success: true, message: "Đặt lại mật khẩu thành công!" });
+      }
+
+      // POST /api/accounts/delete-bulk
+      if (accId === "delete-bulk" && method === "POST") {
+        const body = await request.json().catch(() => ({}));
+        const ids = new Set(body.account_ids || []);
+        accounts = accounts.filter(a => !ids.has(a.account_id) && !ids.has(a.employee_id));
+        await saveTableToD1(db, "11_System_Accounts", accounts);
+        return jsonResponse({ success: true, message: "Đã xóa các tài khoản đã chọn!" });
+      }
+
+      // GET /api/accounts
+      if (method === "GET") {
+        return jsonResponse({ success: true, accounts });
+      }
+
+      // POST /api/accounts (Create)
+      if (method === "POST") {
+        const body = await request.json().catch(() => ({}));
+        const newAcc = {
+          account_id: `ACC-${body.employee_id || Date.now()}`,
+          employee_id: body.employee_id || "",
+          username: (body.username || body.employee_id || `user_${Date.now()}`).toLowerCase(),
+          full_name: body.full_name || "",
+          account_email: body.account_email || "",
+          role: body.role || "USER",
+          account_status: body.account_status || "Kích hoạt",
+          password: body.password || "123456",
+          created_at: new Date().toISOString()
+        };
+        const idx = accounts.findIndex(a => a.account_id === newAcc.account_id || a.employee_id === newAcc.employee_id);
+        if (idx >= 0) {
+          accounts[idx] = { ...accounts[idx], ...newAcc };
+        } else {
+          accounts.push(newAcc);
+        }
+        await saveTableToD1(db, "11_System_Accounts", accounts);
+        return jsonResponse({ success: true, account: newAcc, message: "Tạo tài khoản thành công!" });
+      }
+
+      // PUT /api/accounts/:id (Update)
+      if (method === "PUT" && accId) {
+        const body = await request.json().catch(() => ({}));
+        const idx = accounts.findIndex(a => a.account_id === accId || a.employee_id === accId);
+        if (idx >= 0) {
+          accounts[idx] = { ...accounts[idx], ...body, updated_at: new Date().toISOString() };
+          await saveTableToD1(db, "11_System_Accounts", accounts);
+          return jsonResponse({ success: true, account: accounts[idx], message: "Cập nhật tài khoản thành công!" });
+        }
+        return jsonResponse({ success: false, message: "Không tìm thấy tài khoản" }, 404);
+      }
+
+      // DELETE /api/accounts/:id
+      if (method === "DELETE" && accId) {
+        accounts = accounts.filter(a => a.account_id !== accId && a.employee_id !== accId);
+        await saveTableToD1(db, "11_System_Accounts", accounts);
+        return jsonResponse({ success: true, message: `Đã xóa tài khoản ${accId}!` });
       }
     }
 
