@@ -2,8 +2,8 @@
  * Cloudflare Pages Functions Universal API Router
  * Native Edge Runtime for HRM Enterprise
  * Connected to:
- * - Cloudflare D1 SQL Database (env.DB)
- * - Cloudflare R2 Object Storage (env.R2)
+ * - Cloudflare D1 SQL Database (db)
+ * - Cloudflare R2 Object Storage (r2)
  */
 
 // Default starter template if D1 is freshly created
@@ -232,7 +232,7 @@ export async function onRequest(context) {
   }
 
   // 2. Check D1 binding
-  if (!env.DB) {
+  if (!db) {
     return jsonResponse({
       success: false,
       error: "Cloudflare D1 chưa được liên kết! Vui lòng vào Cloudflare Dashboard -> Pages -> Settings -> Functions -> D1 database bindings và thêm biến 'DB' trỏ tới 'hrm-database'."
@@ -244,7 +244,7 @@ export async function onRequest(context) {
     // Route: GET /api/setup/status
     // -------------------------------------------------------------
     if (path === "setup/status" && method === "GET") {
-      await initD1Store(env.DB);
+      await initD1Store(db);
       return jsonResponse({
         success: true,
         is_setup_completed: true,
@@ -258,8 +258,8 @@ export async function onRequest(context) {
     // Route: POST /api/setup/init-d1 (Force re-initialization)
     // -------------------------------------------------------------
     if (path === "setup/init-d1" && method === "POST") {
-      await env.DB.exec("DROP TABLE IF EXISTS hrm_store;");
-      await initD1Store(env.DB);
+      await db.exec("DROP TABLE IF EXISTS hrm_store;");
+      await initD1Store(db);
       return jsonResponse({ success: true, message: "Đã khởi tạo lại dữ liệu gốc trên Cloudflare D1 thành công!" });
     }
 
@@ -267,7 +267,7 @@ export async function onRequest(context) {
     // Route: GET /api/data (Fetch all HRM tables)
     // -------------------------------------------------------------
     if (path === "data" && method === "GET") {
-      const data = await loadAllFromD1(env.DB);
+      const data = await loadAllFromD1(db);
       return jsonResponse({
         success: true,
         tables: data.tables,
@@ -282,7 +282,7 @@ export async function onRequest(context) {
     if (path === "login" && method === "POST") {
       const body = await request.json().catch(() => ({}));
       const { username, password } = body;
-      const data = await loadAllFromD1(env.DB);
+      const data = await loadAllFromD1(db);
       const accounts = data.tables["11_System_Accounts"] || [];
 
       const user = accounts.find(a => (a.username || "").toLowerCase() === (username || "").toLowerCase().trim());
@@ -313,7 +313,7 @@ export async function onRequest(context) {
     // Route: GET /api/auth/me
     // -------------------------------------------------------------
     if (path === "auth/me" && method === "GET") {
-      const data = await loadAllFromD1(env.DB);
+      const data = await loadAllFromD1(db);
       const accounts = data.tables["11_System_Accounts"] || [];
       const admin = accounts[0] || { username: "admin", full_name: "Quản trị viên", role: "ADMIN" };
       return jsonResponse({ success: true, user: admin });
@@ -325,27 +325,27 @@ export async function onRequest(context) {
     if (path === "organization/import-excel" && method === "POST") {
       const body = await request.json().catch(() => ({}));
       const { companies = [], departments = [], positions = [] } = body;
-      const data = await loadAllFromD1(env.DB);
+      const data = await loadAllFromD1(db);
 
       // Merge companies
       if (companies.length > 0) {
         const compMap = new Map((data.tables["00_Companies"] || []).map(c => [c.company_id, c]));
         companies.forEach(c => compMap.set(c.company_id, { ...compMap.get(c.company_id), ...c }));
-        await saveTableToD1(env.DB, "00_Companies", Array.from(compMap.values()));
+        await saveTableToD1(db, "00_Companies", Array.from(compMap.values()));
       }
 
       // Merge departments
       if (departments.length > 0) {
         const deptMap = new Map((data.tables["01_Departments"] || []).map(d => [d.department_id, d]));
         departments.forEach(d => deptMap.set(d.department_id, { ...deptMap.get(d.department_id), ...d }));
-        await saveTableToD1(env.DB, "01_Departments", Array.from(deptMap.values()));
+        await saveTableToD1(db, "01_Departments", Array.from(deptMap.values()));
       }
 
       // Merge positions
       if (positions.length > 0) {
         const posMap = new Map((data.tables["02_Positions"] || []).map(p => [p.position_id, p]));
         positions.forEach(p => posMap.set(p.position_id, { ...posMap.get(p.position_id), ...p }));
-        await saveTableToD1(env.DB, "02_Positions", Array.from(posMap.values()));
+        await saveTableToD1(db, "02_Positions", Array.from(posMap.values()));
       }
 
       return jsonResponse({
@@ -364,7 +364,7 @@ export async function onRequest(context) {
         return jsonResponse({ success: false, message: "Không tìm thấy dữ liệu nhân viên để import!" }, 400);
       }
 
-      const data = await loadAllFromD1(env.DB);
+      const data = await loadAllFromD1(db);
       const existing = data.tables["03_Employees"] || [];
       const empMap = new Map(existing.map(e => [e.employee_id, e]));
 
@@ -375,8 +375,8 @@ export async function onRequest(context) {
       });
 
       const updatedEmployees = Array.from(empMap.values());
-      await saveTableToD1(env.DB, "03_Employees", updatedEmployees);
-      await saveTableToD1(env.DB, "00_Master_Profiles", updatedEmployees);
+      await saveTableToD1(db, "03_Employees", updatedEmployees);
+      await saveTableToD1(db, "00_Master_Profiles", updatedEmployees);
 
       return jsonResponse({
         success: true,
@@ -395,7 +395,7 @@ export async function onRequest(context) {
 
       // GET /api/employees/:id
       if (method === "GET" && empId) {
-        const data = await loadAllFromD1(env.DB);
+        const data = await loadAllFromD1(db);
         const emp = (data.tables["03_Employees"] || []).find(e => e.employee_id === empId);
         if (!emp) return jsonResponse({ success: false, message: "Không tìm thấy nhân viên" }, 404);
         return jsonResponse({ success: true, employee: emp });
@@ -407,7 +407,7 @@ export async function onRequest(context) {
         const targetId = empId || body.employee_id;
         if (!targetId) return jsonResponse({ success: false, message: "Thiếu mã nhân viên" }, 400);
 
-        const data = await loadAllFromD1(env.DB);
+        const data = await loadAllFromD1(db);
         const employees = data.tables["03_Employees"] || [];
         const index = employees.findIndex(e => e.employee_id === targetId);
 
@@ -417,14 +417,14 @@ export async function onRequest(context) {
           employees.push({ ...body, employee_id: targetId, created_at: new Date().toISOString() });
         }
 
-        await saveTableToD1(env.DB, "03_Employees", employees);
-        await saveTableToD1(env.DB, "00_Master_Profiles", employees);
+        await saveTableToD1(db, "03_Employees", employees);
+        await saveTableToD1(db, "00_Master_Profiles", employees);
         return jsonResponse({ success: true, message: "Lưu thông tin nhân viên thành công!" });
       }
 
       // DELETE /api/employees/:id (Move to trash)
       if (method === "DELETE" && empId) {
-        const data = await loadAllFromD1(env.DB);
+        const data = await loadAllFromD1(db);
         const employees = data.tables["03_Employees"] || [];
         const trash = data.tables["13_Recycle_Bin"] || [];
 
@@ -432,9 +432,9 @@ export async function onRequest(context) {
         if (target) {
           trash.push({ ...target, deleted_at: new Date().toISOString() });
           const newEmps = employees.filter(e => e.employee_id !== empId);
-          await saveTableToD1(env.DB, "03_Employees", newEmps);
-          await saveTableToD1(env.DB, "00_Master_Profiles", newEmps);
-          await saveTableToD1(env.DB, "13_Recycle_Bin", trash);
+          await saveTableToD1(db, "03_Employees", newEmps);
+          await saveTableToD1(db, "00_Master_Profiles", newEmps);
+          await saveTableToD1(db, "13_Recycle_Bin", trash);
         }
 
         return jsonResponse({ success: true, message: `Đã chuyển nhân viên ${empId} vào thùng rác!` });
@@ -448,7 +448,7 @@ export async function onRequest(context) {
       const parts = path.split("/");
       const action = parts[1];
       const targetId = parts[2] ? decodeURIComponent(parts[2]) : null;
-      const data = await loadAllFromD1(env.DB);
+      const data = await loadAllFromD1(db);
       let trash = data.tables["13_Recycle_Bin"] || [];
       let employees = data.tables["03_Employees"] || [];
 
@@ -461,21 +461,21 @@ export async function onRequest(context) {
         if (item) {
           trash = trash.filter(t => t.employee_id !== targetId);
           employees.push(item);
-          await saveTableToD1(env.DB, "13_Recycle_Bin", trash);
-          await saveTableToD1(env.DB, "03_Employees", employees);
-          await saveTableToD1(env.DB, "00_Master_Profiles", employees);
+          await saveTableToD1(db, "13_Recycle_Bin", trash);
+          await saveTableToD1(db, "03_Employees", employees);
+          await saveTableToD1(db, "00_Master_Profiles", employees);
         }
         return jsonResponse({ success: true, message: `Đã khôi phục nhân viên ${targetId}!` });
       }
 
       if (action === "permanent" && targetId) {
         trash = trash.filter(t => t.employee_id !== targetId);
-        await saveTableToD1(env.DB, "13_Recycle_Bin", trash);
+        await saveTableToD1(db, "13_Recycle_Bin", trash);
         return jsonResponse({ success: true, message: `Đã xóa vĩnh viễn nhân viên ${targetId}!` });
       }
 
       if (action === "empty") {
-        await saveTableToD1(env.DB, "13_Recycle_Bin", []);
+        await saveTableToD1(db, "13_Recycle_Bin", []);
         return jsonResponse({ success: true, message: "Đã dọn sạch thùng rác!" });
       }
     }
@@ -485,14 +485,14 @@ export async function onRequest(context) {
     // -------------------------------------------------------------
     if (path === "company/info") {
       if (method === "GET") {
-        const data = await loadAllFromD1(env.DB);
+        const data = await loadAllFromD1(db);
         return jsonResponse({ success: true, company: data.company });
       }
       if (method === "POST") {
         const body = await request.json().catch(() => ({}));
-        const data = await loadAllFromD1(env.DB);
+        const data = await loadAllFromD1(db);
         const updated = { ...data.company, ...body };
-        await env.DB.prepare("INSERT OR REPLACE INTO hrm_store (key, value, updated_at) VALUES ('company_info', ?, CURRENT_TIMESTAMP)")
+        await db.prepare("INSERT OR REPLACE INTO hrm_store (key, value, updated_at) VALUES ('company_info', ?, CURRENT_TIMESTAMP)")
           .bind(JSON.stringify(updated))
           .run();
         return jsonResponse({ success: true, company: updated, message: "Đã cập nhật thông tin thương hiệu công ty!" });
@@ -503,7 +503,7 @@ export async function onRequest(context) {
     // Route: Cloudflare R2 Media Upload & Storage
     // -------------------------------------------------------------
     if ((path === "upload" || path === "company/upload-logo" || path === "upload-media") && method === "POST") {
-      if (!env.R2) {
+      if (!r2) {
         return jsonResponse({
           success: false,
           error: "Cloudflare R2 chưa được liên kết! Vui lòng vào Cloudflare Dashboard -> Pages -> Settings -> Functions -> R2 bucket bindings và thêm biến 'R2' trỏ tới 'hrm-media'."
@@ -519,7 +519,7 @@ export async function onRequest(context) {
       const ext = file.name ? file.name.split(".").pop() : "png";
       const key = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`;
 
-      await env.R2.put(key, file.stream(), {
+      await r2.put(key, file.stream(), {
         httpMetadata: {
           contentType: file.type || "application/octet-stream"
         }
@@ -529,9 +529,9 @@ export async function onRequest(context) {
 
       // If uploading company logo, automatically update branding
       if (path === "company/upload-logo") {
-        const data = await loadAllFromD1(env.DB);
+        const data = await loadAllFromD1(db);
         const updated = { ...data.company, logo_url: mediaUrl };
-        await env.DB.prepare("INSERT OR REPLACE INTO hrm_store (key, value, updated_at) VALUES ('company_info', ?, CURRENT_TIMESTAMP)")
+        await db.prepare("INSERT OR REPLACE INTO hrm_store (key, value, updated_at) VALUES ('company_info', ?, CURRENT_TIMESTAMP)")
           .bind(JSON.stringify(updated))
           .run();
       }
@@ -543,11 +543,11 @@ export async function onRequest(context) {
     // Route: Serve Media from R2 (/api/media/:key)
     // -------------------------------------------------------------
     if (path.startsWith("media/") && method === "GET") {
-      if (!env.R2) {
+      if (!r2) {
         return new Response("R2 not bound", { status: 500 });
       }
       const key = path.replace("media/", "");
-      const object = await env.R2.get(key);
+      const object = await r2.get(key);
       if (!object) {
         return new Response("Not Found", { status: 404 });
       }
@@ -563,7 +563,7 @@ export async function onRequest(context) {
     // Route: System Logs (/api/logs)
     // -------------------------------------------------------------
     if (path === "logs") {
-      const data = await loadAllFromD1(env.DB);
+      const data = await loadAllFromD1(db);
       let logs = data.tables["12_System_Logs"] || [];
 
       if (method === "GET") {
@@ -573,7 +573,7 @@ export async function onRequest(context) {
         const body = await request.json().catch(() => ({}));
         logs.unshift({ ...body, timestamp: new Date().toISOString() });
         if (logs.length > 200) logs = logs.slice(0, 200); // keep 200 recent logs
-        await saveTableToD1(env.DB, "12_System_Logs", logs);
+        await saveTableToD1(db, "12_System_Logs", logs);
         return jsonResponse({ success: true });
       }
     }
