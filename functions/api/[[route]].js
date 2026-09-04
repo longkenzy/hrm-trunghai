@@ -514,19 +514,46 @@ export async function onRequest(context) {
         }, 500);
       }
 
-      const formData = await request.formData();
-      const file = formData.get("file") || formData.get("logo") || formData.get("avatar");
-      if (!file) {
-        return jsonResponse({ success: false, message: "Không tìm thấy file tải lên!" }, 400);
+      let fileBuffer = null;
+      let contentType = "image/png";
+      let ext = "png";
+
+      const reqContentType = request.headers.get("content-type") || "";
+
+      if (reqContentType.includes("application/json")) {
+        const body = await request.json().catch(() => ({}));
+        const base64Data = body.image_base64 || body.image || body.logo || body.file;
+        if (!base64Data) {
+          return jsonResponse({ success: false, message: "Không tìm thấy dữ liệu ảnh base64!" }, 400);
+        }
+        let rawBase64 = base64Data;
+        const match = base64Data.match(/^data:([^;]+);base64,(.*)$/);
+        if (match) {
+          contentType = match[1];
+          rawBase64 = match[2];
+          const subType = contentType.split("/")[1];
+          if (subType) ext = subType.replace("+xml", "");
+        }
+        const binaryStr = atob(rawBase64);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) {
+          bytes[i] = binaryStr.charCodeAt(i);
+        }
+        fileBuffer = bytes.buffer;
+      } else {
+        const formData = await request.formData().catch(() => null);
+        const file = formData ? (formData.get("file") || formData.get("logo") || formData.get("avatar")) : null;
+        if (!file) {
+          return jsonResponse({ success: false, message: "Không tìm thấy file tải lên!" }, 400);
+        }
+        ext = file.name ? file.name.split(".").pop() : "png";
+        contentType = file.type || "application/octet-stream";
+        fileBuffer = await file.arrayBuffer();
       }
 
-      const ext = file.name ? file.name.split(".").pop() : "png";
       const key = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`;
-
-      await r2.put(key, file.stream(), {
-        httpMetadata: {
-          contentType: file.type || "application/octet-stream"
-        }
+      await r2.put(key, fileBuffer, {
+        httpMetadata: { contentType }
       });
 
       const mediaUrl = `/api/media/${key}`;
@@ -540,7 +567,13 @@ export async function onRequest(context) {
           .run();
       }
 
-      return jsonResponse({ success: true, url: mediaUrl, key, message: "Đã tải file lên Cloudflare R2 thành công!" });
+      return jsonResponse({
+        success: true,
+        url: mediaUrl,
+        logo_url: mediaUrl,
+        key,
+        message: "Đã tải file lên Cloudflare R2 thành công!"
+      });
     }
 
     // -------------------------------------------------------------
