@@ -154,28 +154,27 @@ function jsonResponse(data, status = 200) {
 
 // Database helper: ensure store table exists and seed if empty
 async function initD1Store(db) {
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS hrm_store (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
+  try {
+    await db.prepare("CREATE TABLE IF NOT EXISTS hrm_store (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)").run();
 
-  // Check if store has records
-  const countRow = await db.prepare("SELECT COUNT(*) as count FROM hrm_store").first();
-  if (!countRow || countRow.count === 0) {
-    console.log("[D1 Init] Bắt đầu khởi tạo dữ liệu mẫu ban đầu vào Cloudflare D1...");
-    const statements = [
-      db.prepare("INSERT OR REPLACE INTO hrm_store (key, value) VALUES (?, ?)").bind("company_info", JSON.stringify(DEFAULT_COMPANY))
-    ];
-    for (const [tblName, rows] of Object.entries(DEFAULT_TABLES)) {
-      statements.push(
-        db.prepare("INSERT OR REPLACE INTO hrm_store (key, value) VALUES (?, ?)").bind(`tbl_${tblName}`, JSON.stringify(rows))
-      );
+    // Check if store has records
+    const countRow = await db.prepare("SELECT COUNT(*) as count FROM hrm_store").first();
+    if (!countRow || Number(countRow.count) === 0) {
+      console.log("[D1 Init] Bắt đầu khởi tạo dữ liệu mẫu ban đầu vào Cloudflare D1...");
+      const statements = [
+        db.prepare("INSERT OR REPLACE INTO hrm_store (key, value) VALUES (?, ?)").bind("company_info", JSON.stringify(DEFAULT_COMPANY))
+      ];
+      for (const [tblName, rows] of Object.entries(DEFAULT_TABLES)) {
+        statements.push(
+          db.prepare("INSERT OR REPLACE INTO hrm_store (key, value) VALUES (?, ?)").bind(`tbl_${tblName}`, JSON.stringify(rows))
+        );
+      }
+      await db.batch(statements);
+      console.log("[D1 Init] Khởi tạo dữ liệu mẫu D1 thành công!");
     }
-    await db.batch(statements);
-    console.log("[D1 Init] Khởi tạo dữ liệu mẫu D1 thành công!");
+  } catch (err) {
+    console.error("[D1 Init Error]:", err);
+    throw new Error("Lỗi tương tác Cloudflare D1: " + err.message);
   }
 }
 
@@ -212,16 +211,17 @@ async function saveTableToD1(db, tblName, rows) {
 
 export default {
   async fetch(request, env, ctx) {
-    const url = new URL(request.url);
-    const method = request.method;
+    try {
+      const url = new URL(request.url);
+      const method = request.method;
 
-    // 1. If not an /api/ route, serve static assets (HTML, CSS, JS, images)
-    if (!url.pathname.startsWith("/api")) {
-      if (env.ASSETS) {
-        return env.ASSETS.fetch(request);
+      // 1. If not an /api/ route, serve static assets (HTML, CSS, JS, images)
+      if (!url.pathname.startsWith("/api")) {
+        if (env.ASSETS) {
+          return env.ASSETS.fetch(request);
+        }
+        return new Response("Not Found", { status: 404 });
       }
-      return new Response("Not Found", { status: 404 });
-    }
 
     // 2. Handle CORS Preflight
     if (method === "OPTIONS") {
@@ -592,7 +592,22 @@ export default {
       return jsonResponse({ success: false, message: `Không tìm thấy API route: /api/${path}` }, 404);
     } catch (err) {
       console.error("[Cloudflare API Error]:", err);
-      return jsonResponse({ success: false, error: err.message || "Lỗi máy chủ Cloudflare" }, 500);
+      return jsonResponse({
+        success: false,
+        error: err.message || "Lỗi máy chủ Cloudflare",
+        stack: err.stack,
+        availableEnvKeys: Object.keys(env || {})
+      }, 500);
     }
+  } catch (fatalErr) {
+    return new Response(JSON.stringify({
+      success: false,
+      error: "Fatal Worker Error: " + fatalErr.message,
+      stack: fatalErr.stack
+    }), {
+      status: 500,
+      headers: { "Content-Type": "application/json; charset=utf-8" }
+    });
   }
+}
 };
