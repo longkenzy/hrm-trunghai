@@ -1,8 +1,23 @@
 const { google } = require('googleapis');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 const CONFIG_PATH = path.join(__dirname, '..', 'config', 'sheets.config.json');
+const TMP_CONFIG_PATH = path.join(os.tmpdir(), 'sheets.config.json');
+const TMP_KEY_PATH = path.join(os.tmpdir(), 'service-account.json');
+
+let inMemoryConfig = null;
+let inMemoryCredentials = null;
+
+// Helper to set credentials directly in memory
+function setCredentials(creds) {
+    if (!creds) return;
+    inMemoryCredentials = typeof creds === 'string' ? JSON.parse(creds) : creds;
+    try {
+        process.env.GOOGLE_SERVICE_ACCOUNT_JSON = JSON.stringify(inMemoryCredentials);
+    } catch (e) {}
+}
 
 // Helper to get config
 function getConfig() {
@@ -12,13 +27,25 @@ function getConfig() {
         autoSyncOnSave: true
     };
 
+    // 1. Read from static config file if exists
     try {
         if (fs.existsSync(CONFIG_PATH)) {
             const fileCfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
             baseConfig = { ...baseConfig, ...fileCfg };
         }
-    } catch (e) {
-        console.error('Error reading sheets config:', e.message);
+    } catch (e) {}
+
+    // 2. Read from /tmp config (for Serverless / Vercel)
+    try {
+        if (fs.existsSync(TMP_CONFIG_PATH)) {
+            const tmpCfg = JSON.parse(fs.readFileSync(TMP_CONFIG_PATH, 'utf-8'));
+            baseConfig = { ...baseConfig, ...tmpCfg };
+        }
+    } catch (e) {}
+
+    // 3. Merge in-memory updates
+    if (inMemoryConfig) {
+        baseConfig = { ...baseConfig, ...inMemoryConfig };
     }
 
     if (process.env.GOOGLE_SPREADSHEET_ID) {
@@ -28,24 +55,47 @@ function getConfig() {
     return baseConfig;
 }
 
-// Helper to save config
+// Helper to save config (Serverless-safe with /tmp and in-memory fallback)
 function saveConfig(cfg) {
+    const current = getConfig();
+    const updated = { ...current, ...cfg };
+    inMemoryConfig = updated;
+
+    let savedOnDisk = false;
+    // Try writing to normal config folder
     try {
         const dir = path.dirname(CONFIG_PATH);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        const current = getConfig();
-        const updated = { ...current, ...cfg };
         fs.writeFileSync(CONFIG_PATH, JSON.stringify(updated, null, 2), 'utf-8');
-        return true;
+        savedOnDisk = true;
     } catch (e) {
-        console.error('Error saving sheets config:', e.message);
-        return false;
+        // Fallback to /tmp in read-only / serverless environment (Vercel)
+        try {
+            fs.writeFileSync(TMP_CONFIG_PATH, JSON.stringify(updated, null, 2), 'utf-8');
+            savedOnDisk = true;
+        } catch (tmpErr) {
+            console.warn('⚠️ Không thể ghi cấu hình sheets vào ổ đĩa:', tmpErr.message);
+        }
     }
+
+    return true;
 }
 
-// Get Google Sheets API Client
+// Get Google Sheets API Client (Checks in-memory, env var, /tmp, then local disk)
 function getSheetsClient() {
-    // 1. Check for Cloud / Vercel Environment Variable first
+    // 1. Check for in-memory credentials first
+    if (inMemoryCredentials) {
+        const auth = new google.auth.GoogleAuth({
+            credentials: inMemoryCredentials,
+            scopes: [
+                'https://www.googleapis.com/auth/spreadsheets',
+                'https://www.googleapis.com/auth/drive'
+            ]
+        });
+        return google.sheets({ version: 'v4', auth });
+    }
+
+    // 2. Check for Cloud / Vercel Environment Variable
     if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
         try {
             const credentials = typeof process.env.GOOGLE_SERVICE_ACCOUNT_JSON === 'string'
@@ -65,7 +115,19 @@ function getSheetsClient() {
         }
     }
 
-    // 2. Check for local key file on disk
+    // 3. Check for /tmp/service-account.json
+    if (fs.existsSync(TMP_KEY_PATH)) {
+        const auth = new google.auth.GoogleAuth({
+            keyFile: TMP_KEY_PATH,
+            scopes: [
+                'https://www.googleapis.com/auth/spreadsheets',
+                'https://www.googleapis.com/auth/drive'
+            ]
+        });
+        return google.sheets({ version: 'v4', auth });
+    }
+
+    // 4. Check for local key file on disk
     const cfg = getConfig();
     let keyFile = cfg.keyFilePath;
     if (!path.isAbsolute(keyFile)) {
@@ -73,7 +135,7 @@ function getSheetsClient() {
     }
 
     if (!fs.existsSync(keyFile)) {
-        throw new Error(`Khóa Service Account không tồn tại tại: ${keyFile}. Vui lòng thiết lập biến môi trường GOOGLE_SERVICE_ACCOUNT_JSON trên Vercel hoặc đặt file key tại máy chủ.`);
+        throw new Error(`Khóa Service Account không tìm thấy trên hệ thống. Vui lòng thiết lập biến môi trường GOOGLE_SERVICE_ACCOUNT_JSON trên Vercel hoặc tải file key qua giao diện cài đặt.`);
     }
 
     const auth = new google.auth.GoogleAuth({
@@ -327,6 +389,7 @@ function triggerBackgroundSync(db) {
 }
 
 module.exports = {
+    setCredentials,
     getConfig,
     saveConfig,
     testConnection,

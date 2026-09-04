@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const XLSX = require('xlsx');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -122,6 +123,10 @@ function optionalAuth(req, res, next) {
 
 // Path to JSON database
 const DB_PATH = path.join(__dirname, 'database_schema.json');
+const TMP_DB_PATH = path.join(os.tmpdir(), 'database_schema.json');
+
+// In-memory cache for serverless environments (e.g. Vercel)
+let inMemoryDb = null;
 
 // Ensure default admin exists in database (only if no admin exists to prevent lockout)
 function ensureDefaultAccounts(db) {
@@ -154,13 +159,26 @@ function ensureDefaultAccounts(db) {
     });
 }
 
-// Helper to load DB
+// Helper to load DB (Reads in-memory -> /tmp -> disk)
 function loadDatabase() {
+    if (inMemoryDb && inMemoryDb.tables) {
+        ensureDefaultAccounts(inMemoryDb);
+        return inMemoryDb;
+    }
+
     try {
+        if (fs.existsSync(TMP_DB_PATH)) {
+            const raw = fs.readFileSync(TMP_DB_PATH, 'utf-8');
+            const db = JSON.parse(raw);
+            ensureDefaultAccounts(db);
+            inMemoryDb = db;
+            return db;
+        }
         if (fs.existsSync(DB_PATH)) {
             const raw = fs.readFileSync(DB_PATH, 'utf-8');
             const db = JSON.parse(raw);
             ensureDefaultAccounts(db);
+            inMemoryDb = db;
             return db;
         }
     } catch (e) {
@@ -168,6 +186,7 @@ function loadDatabase() {
     }
     const db = { tables: {} };
     ensureDefaultAccounts(db);
+    inMemoryDb = db;
     return db;
 }
 
@@ -185,24 +204,38 @@ function syncToExcelFile(db) {
         }
         XLSX.writeFile(wb, EXCEL_DB_PATH);
     } catch (e) {
-        // Handle lock if file is open in Microsoft Excel
-        console.warn('⚠️ Ghi chú đồng bộ Excel (Có thể file đang mở trong MS Excel):', e.message);
+        // Handled silently on read-only environments
     }
 }
 
-// Helper to save DB
+// Helper to save DB (Serverless-safe with in-memory and /tmp fallback)
 function saveDatabase(data) {
+    inMemoryDb = data;
+    let saved = false;
+
+    // 1. Try saving to project root (works on local development / VPS)
     try {
         fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2), 'utf-8');
-        // Tự động đồng bộ cập nhật vào file Excel HRM_Database_Normalized.xlsx
-        setTimeout(() => syncToExcelFile(data), 10);
-        // Tự động đồng bộ cập nhật lên Google Sheets (nếu đã kết nối)
-        googleSheets.triggerBackgroundSync(data);
-        return true;
+        saved = true;
     } catch (e) {
-        console.error('Error saving database_schema.json:', e);
-        return false;
+        // 2. Fallback to /tmp on serverless read-only filesystem (Vercel / AWS Lambda)
+        try {
+            fs.writeFileSync(TMP_DB_PATH, JSON.stringify(data, null, 2), 'utf-8');
+            saved = true;
+        } catch (tmpErr) {
+            console.warn('⚠️ Ghi CSDL vào /tmp thất bại:', tmpErr.message);
+        }
     }
+
+    try {
+        setTimeout(() => syncToExcelFile(data), 10);
+    } catch (e) {}
+
+    try {
+        googleSheets.triggerBackgroundSync(data);
+    } catch (e) {}
+
+    return saved;
 }
 
 // ==========================================
@@ -4354,15 +4387,32 @@ app.post('/api/setup/complete', async (req, res) => {
 
         const parsedCreds = typeof credentials === 'string' ? JSON.parse(credentials) : credentials;
 
-        // 1. Save credentials file
-        const keyFilePath = path.join(__dirname, 'config', 'service-account.json');
-        const configDir = path.join(__dirname, 'config');
-        if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
-        fs.writeFileSync(keyFilePath, JSON.stringify(parsedCreds, null, 2), 'utf-8');
+        // 1. Store credentials in memory and environment
+        googleSheets.setCredentials(parsedCreds);
+        process.env.GOOGLE_SPREADSHEET_ID = spreadsheetId.trim();
 
-        // 2. Save sheets configuration
+        // Safe credentials file persistence (handles read-only Vercel environment)
+        let keyFilePath = './config/service-account.json';
+        try {
+            const configDir = path.join(__dirname, 'config');
+            if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
+            const localKeyPath = path.join(configDir, 'service-account.json');
+            fs.writeFileSync(localKeyPath, JSON.stringify(parsedCreds, null, 2), 'utf-8');
+            keyFilePath = localKeyPath;
+        } catch (fsErr) {
+            console.warn('⚠️ Không thể ghi file cấu hình cục bộ (Vercel/Read-only filesystem):', fsErr.message);
+            try {
+                const tmpKeyPath = path.join(os.tmpdir(), 'service-account.json');
+                fs.writeFileSync(tmpKeyPath, JSON.stringify(parsedCreds, null, 2), 'utf-8');
+                keyFilePath = tmpKeyPath;
+            } catch (tmpErr) {
+                console.warn('⚠️ Không thể ghi file /tmp:', tmpErr.message);
+            }
+        }
+
+        // 2. Save sheets configuration (with in-memory & /tmp fallback)
         googleSheets.saveConfig({
-            keyFilePath: './config/service-account.json',
+            keyFilePath,
             spreadsheetId: spreadsheetId.trim(),
             autoSyncOnSave: true,
             is_setup_completed: true
