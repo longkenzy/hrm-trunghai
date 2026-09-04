@@ -8,8 +8,6 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const googleSheets = require('./services/googleSheets');
-
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'hrm-trunghai-enterprise-jwt-key-2026-super-secure';
@@ -30,7 +28,7 @@ app.use(helmet({
             styleSrcAttr: ["'unsafe-inline'"],
             fontSrc: ["'self'", "https://cdnjs.cloudflare.com", "https://fonts.gstatic.com", "data:"],
             imgSrc: ["'self'", "data:", "blob:", "https:"],
-            connectSrc: ["'self'", "https://docs.google.com", "https://sheets.googleapis.com", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://*.jsdelivr.net"]
+            connectSrc: ["'self'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://*.jsdelivr.net"]
         }
     },
     crossOriginEmbedderPolicy: false
@@ -226,13 +224,9 @@ function syncToExcelFile(db) {
 }
 
 // Helper to save DB (Serverless-safe with in-memory and /tmp fallback)
-function saveDatabase(data, skipGoogleSync = false, clientSpreadsheetId = null, clientCredentials = null) {
+function saveDatabase(data) {
     inMemoryDb = data;
     let saved = false;
-
-    // Track local mutation timestamp to protect recent writes from being overwritten by cloud pulls
-    lastLocalMutationTime = Date.now();
-    lastCloudSyncTime = Date.now();
 
     // 1. Try saving to project root (works on local development / VPS)
     try {
@@ -251,14 +245,6 @@ function saveDatabase(data, skipGoogleSync = false, clientSpreadsheetId = null, 
     try {
         setTimeout(() => syncToExcelFile(data), 10);
     } catch (e) {}
-
-    if (!skipGoogleSync) {
-        const targetSheetId = clientSpreadsheetId || activeClientSpreadsheetId;
-        const targetCreds = clientCredentials || activeClientCredentials;
-        try {
-            googleSheets.triggerBackgroundSync(data, targetSheetId, targetCreds);
-        } catch (e) {}
-    }
 
     return saved;
 }
@@ -287,73 +273,6 @@ function recordLog(db, { action_type, module, description, user_id, user_name, u
     }
     return logEntry;
 }
-
-// Cloud Cache Timer & Synchronization Handler
-let lastCloudSyncTime = 0;
-const CLOUD_CACHE_TTL_MS = 20000; // 20s cache window to avoid hitting Google quota
-let isSyncingFromCloud = false;
-
-async function syncWithGoogleSheetsIfConfigured(force = false, customSpreadsheetId = null, customCredentials = null) {
-    const cfg = googleSheets.getConfig();
-    const spreadsheetId = customSpreadsheetId || activeClientSpreadsheetId || cfg.spreadsheetId;
-    if (!spreadsheetId) {
-        return null;
-    }
-
-    const now = Date.now();
-
-    // CRITICAL: NEVER overwrite local data if mutated recently (unless explicitly forced)
-    if (!force && lastLocalMutationTime > 0 && (now - lastLocalMutationTime < 60000)) {
-        return inMemoryDb;
-    }
-
-    // Use cached in-memory database if still valid
-    if (!force && inMemoryDb && (now - lastCloudSyncTime < CLOUD_CACHE_TTL_MS)) {
-        return inMemoryDb;
-    }
-
-    if (isSyncingFromCloud) {
-        return inMemoryDb;
-    }
-
-    isSyncingFromCloud = true;
-    try {
-        console.log(`[Google Sheets Auto-Sync] Đang nạp dữ liệu từ Google Sheets (${spreadsheetId.slice(0, 8)}...)...`);
-        const cloudData = await googleSheets.importAllFromGoogleSheets(spreadsheetId, customCredentials || activeClientCredentials);
-        if (cloudData && cloudData.tables && Object.keys(cloudData.tables).length > 0) {
-            let current = loadDatabase();
-            current.tables = { ...current.tables, ...cloudData.tables };
-            inMemoryDb = current;
-            lastCloudSyncTime = now;
-            saveDatabase(current, true); // Do NOT re-export back to Google Sheets on import!
-            console.log('[Google Sheets Auto-Sync] Đồng bộ thành công!');
-            return current;
-        }
-    } catch (err) {
-        console.warn('⚠️ Tự động đồng bộ Google Sheets không thành công (dùng bản đệm):', err.message);
-    } finally {
-        isSyncingFromCloud = false;
-    }
-
-    return null;
-}
-
-// Auto-sync middleware for read requests when Google Sheets is connected
-app.use(async (req, res, next) => {
-    if (req.method === 'GET' && (req.path === '/api/data' || req.path === '/api/stats' || req.path === '/api/employees')) {
-        const clientSheetId = req.headers['x-spreadsheet-id'] || req.query.spreadsheetId || activeClientSpreadsheetId;
-        const clientCreds = req.headers['x-google-credentials'] || activeClientCredentials;
-        const isForce = req.query.refresh === 'true';
-        const isColdStart = !inMemoryDb;
-        const isCacheExpired = (Date.now() - lastCloudSyncTime > CLOUD_CACHE_TTL_MS);
-        const isSafeFromLocalMutation = (Date.now() - lastLocalMutationTime > 60000);
-
-        if ((isColdStart || isCacheExpired || isForce) && (isSafeFromLocalMutation || isColdStart || isForce)) {
-            await syncWithGoogleSheetsIfConfigured(isForce, clientSheetId, clientCreds);
-        }
-    }
-    next();
-});
 
 // 1. GET FULL DATABASE
 app.get('/api/data', (req, res) => {
@@ -1856,22 +1775,7 @@ app.post('/api/employees/import-excel', async (req, res) => {
             ip: req.ip
         });
 
-        saveDatabase(db, true); // Save locally first
-
-        // Await batch export to Google Sheets so data is immediately persistent on cloud / Vercel
-        const targetSheetId = clientSheetId || activeClientSpreadsheetId;
-        const targetCreds = clientCreds || activeClientCredentials;
-        if (targetSheetId) {
-            try {
-                console.log(`[Google Sheets Import Sync] Đang đồng bộ batch dữ liệu nhân sự vừa nhập lên Google Sheet (${targetSheetId.slice(0, 8)}...)...`);
-                await googleSheets.exportAllToGoogleSheets(db, targetSheetId, targetCreds);
-                lastCloudSyncTime = Date.now();
-                lastLocalMutationTime = Date.now();
-                console.log('[Google Sheets Import Sync] Đồng bộ lên Google Sheet hoàn tất!');
-            } catch (syncErr) {
-                console.warn('⚠️ Lỗi đồng bộ lên Google Sheet:', syncErr.message);
-            }
-        }
+        saveDatabase(db);
 
         res.json({
             success: true,
@@ -3733,22 +3637,7 @@ app.post('/api/organization/import-excel', async (req, res) => {
             ip: req.ip
         });
 
-        saveDatabase(db, true); // Save locally first
-
-        // Await batch export to Google Sheets so data is immediately persistent on cloud / Vercel
-        const targetSheetId = clientSheetId || activeClientSpreadsheetId;
-        const targetCreds = clientCreds || activeClientCredentials;
-        if (targetSheetId) {
-            try {
-                console.log(`[Google Sheets Org Sync] Đang đồng bộ batch dữ liệu tổ chức vừa nhập lên Google Sheet (${targetSheetId.slice(0, 8)}...)...`);
-                await googleSheets.exportAllToGoogleSheets(db, targetSheetId, targetCreds);
-                lastCloudSyncTime = Date.now();
-                lastLocalMutationTime = Date.now();
-                console.log('[Google Sheets Org Sync] Đồng bộ tổ chức lên Google Sheet hoàn tất!');
-            } catch (syncErr) {
-                console.warn('⚠️ Lỗi đồng bộ tổ chức lên Google Sheet:', syncErr.message);
-            }
-        }
+        saveDatabase(db);
 
         res.json({
             success: true,
@@ -4330,398 +4219,15 @@ app.post('/api/company/upload-logo', (req, res) => {
 });
 
 // ==========================================
-// GOOGLE SHEETS CLOUD DATABASE ENDPOINTS
+// SYSTEM STATUS ENDPOINT
 // ==========================================
-
-// GET CONFIG & CONNECTION STATUS
-app.get('/api/sheets/config', async (req, res) => {
-    const cfg = googleSheets.getConfig();
-    const status = await googleSheets.testConnection();
+app.get('/api/setup/status', (req, res) => {
     res.json({
         success: true,
-        config: {
-            spreadsheetId: cfg.spreadsheetId || '',
-            autoSyncOnSave: cfg.autoSyncOnSave !== false
-        },
-        connection: status
+        is_setup_completed: true,
+        storage: 'cloudflare-d1',
+        message: 'Hệ thống HRM hoạt động trên nền tảng Cloudflare D1 & R2.'
     });
-});
-
-// UPDATE CONFIG & TEST CONNECTION
-app.post('/api/sheets/config', async (req, res) => {
-    const { spreadsheetId, autoSyncOnSave } = req.body;
-    let cleanId = (spreadsheetId || '').trim();
-    
-    // Extract ID if user pastes full URL
-    const match = cleanId.match(/\/d\/([a-zA-Z0-9-_]+)/);
-    if (match) {
-        cleanId = match[1];
-    }
-
-    googleSheets.saveConfig({
-        spreadsheetId: cleanId,
-        autoSyncOnSave: autoSyncOnSave !== false
-    });
-
-    const status = await googleSheets.testConnection(cleanId);
-    res.json({
-        success: status.success,
-        spreadsheetId: cleanId,
-        status
-    });
-});
-
-// FORCE PUSH (SYNC ALL TO GOOGLE SHEETS)
-app.post('/api/sheets/sync-to-cloud', async (req, res) => {
-    try {
-        const db = loadDatabase();
-        const result = await googleSheets.exportAllToGoogleSheets(db);
-        
-        recordLog(db, {
-            action_type: 'SYNC_CLOUD',
-            module: 'Cơ sở dữ liệu',
-            description: `Đã đồng bộ toàn bộ cơ sở dữ liệu lên Google Sheets`,
-            user_id: req.body?.user_id || 'TH-1948',
-            user_name: req.body?.user_name || 'Huỳnh Thanh Long',
-            user_role: req.body?.user_role || 'ADMIN',
-            ip: req.ip
-        });
-        saveDatabase(db);
-
-        res.json({
-            success: true,
-            message: 'Đã đồng bộ toàn bộ dữ liệu lên Google Sheets thành công!',
-            result
-        });
-    } catch (e) {
-        res.status(500).json({
-            success: false,
-            message: `Lỗi đồng bộ Google Sheets: ${e.message}`
-        });
-    }
-});
-
-// FORCE PULL (IMPORT ALL FROM GOOGLE SHEETS)
-app.post('/api/sheets/pull-from-cloud', async (req, res) => {
-    try {
-        const cloudData = await googleSheets.importAllFromGoogleSheets();
-        if (!cloudData || !cloudData.tables || Object.keys(cloudData.tables).length === 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'Không tìm thấy dữ liệu hợp lệ trên Google Sheets'
-            });
-        }
-
-        const db = loadDatabase();
-        // Merge or replace
-        db.tables = { ...db.tables, ...cloudData.tables };
-
-        recordLog(db, {
-            action_type: 'PULL_CLOUD',
-            module: 'Cơ sở dữ liệu',
-            description: `Đã nạp lại cơ sở dữ liệu từ Google Sheets về hệ thống`,
-            user_id: req.body?.user_id || 'TH-1948',
-            user_name: req.body?.user_name || 'Huỳnh Thanh Long',
-            user_role: req.body?.user_role || 'ADMIN',
-            ip: req.ip
-        });
-        saveDatabase(db);
-
-        res.json({
-            success: true,
-            message: 'Đã nạp toàn bộ dữ liệu từ Google Sheets về hệ thống thành công!',
-            tableCount: Object.keys(cloudData.tables).length
-        });
-    } catch (e) {
-        res.status(500).json({
-            success: false,
-            message: `Lỗi nạp dữ liệu từ Google Sheets: ${e.message}`
-        });
-    }
-});
-
-// =============================================================================
-// SETUP WIZARD API ENDPOINTS
-// =============================================================================
-
-// Check setup status
-app.get('/api/setup/status', (req, res) => {
-    const clientSheetId = req.headers['x-spreadsheet-id'] || req.query.spreadsheetId;
-    const cfg = googleSheets.getConfig();
-    const activeSheetId = clientSheetId || cfg.spreadsheetId;
-    const isCompleted = Boolean(activeSheetId && (clientSheetId || cfg.is_setup_completed));
-    res.json({
-        is_setup_completed: isCompleted,
-        spreadsheetId: activeSheetId || '',
-        autoSyncOnSave: cfg.autoSyncOnSave !== false
-    });
-});
-
-// Validate Google Service Account JSON payload
-app.post('/api/setup/validate-json', (req, res) => {
-    try {
-        let { credentials } = req.body;
-        if (typeof credentials === 'string') {
-            credentials = JSON.parse(credentials);
-        }
-
-        if (!credentials || typeof credentials !== 'object') {
-            return res.status(400).json({ success: false, message: 'Dữ liệu JSON không đúng cấu trúc đối tượng' });
-        }
-
-        if (!credentials.client_email || !credentials.private_key || !credentials.project_id) {
-            return res.status(400).json({
-                success: false,
-                message: 'File JSON thiếu các trường bắt buộc của Service Account (client_email, private_key, project_id)'
-            });
-        }
-
-        res.json({
-            success: true,
-            message: 'Khóa Service Account JSON hợp lệ!',
-            project_id: credentials.project_id,
-            client_email: credentials.client_email
-        });
-    } catch (e) {
-        res.status(400).json({
-            success: false,
-            message: 'Nội dung file không phải định dạng JSON hợp lệ: ' + e.message
-        });
-    }
-});
-
-// Verify connection with custom credentials and spreadsheet ID
-app.post('/api/setup/verify-sheet', async (req, res) => {
-    try {
-        const { credentials, spreadsheetId } = req.body;
-        const result = await googleSheets.testConnectionWithCredentials(credentials, spreadsheetId);
-        res.json(result);
-    } catch (e) {
-        res.status(500).json({
-            success: false,
-            message: 'Lỗi kiểm tra kết nối: ' + e.message
-        });
-    }
-});
-
-// Complete Setup Wizard & Initialize System
-app.post('/api/setup/complete', async (req, res) => {
-    try {
-        let { credentials, spreadsheetId, dataOption, admin } = req.body;
-        if (!spreadsheetId || !spreadsheetId.trim()) {
-            return res.status(400).json({ success: false, message: 'Chưa cung cấp Google Spreadsheet ID' });
-        }
-        if (!credentials) {
-            return res.status(400).json({ success: false, message: 'Chưa cung cấp Service Account JSON' });
-        }
-
-        const parsedCreds = typeof credentials === 'string' ? JSON.parse(credentials) : credentials;
-
-        // 1. Store credentials in memory and environment
-        googleSheets.setCredentials(parsedCreds);
-        process.env.GOOGLE_SPREADSHEET_ID = spreadsheetId.trim();
-
-        // Safe credentials file persistence (handles read-only Vercel environment)
-        let keyFilePath = './config/service-account.json';
-        try {
-            const configDir = path.join(__dirname, 'config');
-            if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
-            const localKeyPath = path.join(configDir, 'service-account.json');
-            fs.writeFileSync(localKeyPath, JSON.stringify(parsedCreds, null, 2), 'utf-8');
-            keyFilePath = localKeyPath;
-        } catch (fsErr) {
-            console.warn('⚠️ Không thể ghi file cấu hình cục bộ (Vercel/Read-only filesystem):', fsErr.message);
-            try {
-                const tmpKeyPath = path.join(os.tmpdir(), 'service-account.json');
-                fs.writeFileSync(tmpKeyPath, JSON.stringify(parsedCreds, null, 2), 'utf-8');
-                keyFilePath = tmpKeyPath;
-            } catch (tmpErr) {
-                console.warn('⚠️ Không thể ghi file /tmp:', tmpErr.message);
-            }
-        }
-
-        // 2. Save sheets configuration (with in-memory & /tmp fallback)
-        googleSheets.saveConfig({
-            keyFilePath,
-            spreadsheetId: spreadsheetId.trim(),
-            autoSyncOnSave: true,
-            is_setup_completed: true
-        });
-
-        // 3. Prepare Database
-        let db = loadDatabase();
-        
-        // Handle Super Admin Profile & Account
-        const adminId = admin?.employee_id || 'TH-0001';
-        const adminName = admin?.full_name || 'Quản Trị Viên';
-        const adminEmail = admin?.email || 'admin@trunghai.vn';
-        const adminPass = admin?.password || 'admin@123';
-        const adminPhone = admin?.phone || '0901234567';
-        const adminTitle = admin?.job_title || 'Giám Đốc Quản Trị Hệ Thống';
-
-        if (dataOption === 'CLEAN') {
-            // Clean database: reset tables and create only 1 admin account
-            const defaultCompany = [{
-                company_id: 'CP-01',
-                company_name: 'CÔNG TY TNHH',
-                tax_code: '',
-                phone: '',
-                email: '',
-                address: '',
-                status: 'Hoạt động'
-            }];
-            db.tables = {
-                '00_Companies': defaultCompany,
-                '00_Master_Profiles': [{
-                    employee_id: adminId,
-                    full_name: adminName,
-                    work_email: adminEmail,
-                    mobile_phone: adminPhone,
-                    job_title: adminTitle,
-                    department_id: 'BGD',
-                    department_name: 'Ban Giám Đốc',
-                    employment_status: 'Đang làm việc',
-                    labor_nature: 'Chính thức',
-                    gender: 'Nam',
-                    join_date: new Date().toISOString().split('T')[0]
-                }],
-                '00_Data_Dictionary': db.tables['00_Data_Dictionary'] || [],
-                '01_Departments': [
-                    { department_id: 'BGD', department_name: 'Ban Giám Đốc', parent_dept_id: '', manager_id: adminId, status: 'Hoạt động' },
-                    { department_id: 'HR', department_name: 'Phòng Hành Chính Nhân Sự', parent_dept_id: 'BGD', manager_id: '', status: 'Hoạt động' },
-                    { department_id: 'KT', department_name: 'Phòng Tài Chính Kế Toán', parent_dept_id: 'BGD', manager_id: '', status: 'Hoạt động' }
-                ],
-                '02_Positions': [
-                    { position_id: 'POS-01', position_name: 'Tổng Giám Đốc', department_id: 'BGD', level: 'Cấp 10' },
-                    { position_id: 'POS-02', position_name: 'Trưởng Phòng Nhân Sự', department_id: 'HR', level: 'Cấp 8' }
-                ],
-                '03_Employees': [{
-                    employee_id: adminId,
-                    full_name: adminName,
-                    work_email: adminEmail,
-                    mobile_phone: adminPhone,
-                    job_title: adminTitle,
-                    department_id: 'BGD',
-                    department_name: 'Ban Giám Đốc',
-                    employment_status: 'Đang làm việc',
-                    labor_nature: 'Chính thức',
-                    gender: 'Nam',
-                    join_date: new Date().toISOString().split('T')[0]
-                }],
-                '04_Contacts_Addresses': [],
-                '05_Identity_Docs': [],
-                '06_Emergency_Contacts': [],
-                '07_Education': [],
-                '08_Salaries_Banks': [],
-                '09_Insurance_Welfare': [],
-                '10_Contracts': [{
-                    contract_id: adminId,
-                    employee_id: adminId,
-                    full_name: adminName,
-                    contract_type: 'Hợp đồng lao động không xác định thời hạn',
-                    trial_start_date: new Date().toISOString().split('T')[0],
-                    official_date: new Date().toISOString().split('T')[0],
-                    contract_status: 'HIỆU LỰC'
-                }],
-                '11_System_Accounts': [{
-                    account_id: 'ACC-001',
-                    employee_id: adminId,
-                    username: admin?.username || adminEmail.split('@')[0] || 'admin',
-                    full_name: adminName,
-                    role: 'ADMIN',
-                    account_status: 'Kích hoạt',
-                    password: adminPass,
-                    created_at: new Date().toISOString()
-                }],
-                '12_System_Logs': [{
-                    log_id: 'LOG-001',
-                    action_type: 'SETUP',
-                    module: 'Hệ thống',
-                    description: `Khởi tạo hệ thống HRM và tạo tài khoản Quản trị viên cấp cao (${adminName})`,
-                    user_id: adminId,
-                    user_name: adminName,
-                    user_role: 'ADMIN',
-                    ip: req.ip || '127.0.0.1',
-                    created_at: new Date().toISOString()
-                }],
-                '13_Recycle_Bin': []
-            };
-        } else {
-            // Sample data option: Load from sample_database.json if available
-            const SAMPLE_DB_PATH = path.join(__dirname, 'sample_database.json');
-            if (fs.existsSync(SAMPLE_DB_PATH)) {
-                try {
-                    const sample = JSON.parse(fs.readFileSync(SAMPLE_DB_PATH, 'utf-8'));
-                    if (sample && sample.tables) {
-                        db.tables = sample.tables;
-                    }
-                } catch (e) {
-                    console.warn('Không thể đọc sample_database.json:', e.message);
-                }
-            }
-
-            const accounts = db.tables['11_System_Accounts'] || [];
-            const existingAdminIdx = accounts.findIndex(a => a.username === (admin?.username || 'admin') || a.role === 'ADMIN');
-            const adminAcc = {
-                account_id: 'ACC-ADMIN',
-                employee_id: adminId,
-                username: admin?.username || 'admin',
-                full_name: adminName,
-                role: 'ADMIN',
-                account_status: 'Kích hoạt',
-                password: adminPass,
-                created_at: new Date().toISOString()
-            };
-
-            if (existingAdminIdx >= 0) {
-                accounts[existingAdminIdx] = { ...accounts[existingAdminIdx], ...adminAcc };
-            } else {
-                accounts.unshift(adminAcc);
-            }
-            db.tables['11_System_Accounts'] = accounts;
-        }
-
-        // Cache clean or sample database in memory & storage
-        inMemoryDb = db;
-        lastCloudSyncTime = Date.now();
-        saveDatabase(db);
-
-        // 4. Export all tables directly to Google Sheets
-        console.log('[Setup Wizard] Đang đẩy 14 bảng dữ liệu lên Google Sheets...');
-        await googleSheets.exportAllToGoogleSheets(db);
-        console.log('[Setup Wizard] Đã đồng bộ Google Sheets thành công!');
-
-        res.json({
-            success: true,
-            message: 'Khởi tạo hệ thống và đồng bộ Google Sheets thành công!',
-            admin: {
-                username: admin?.username || 'admin',
-                full_name: adminName,
-                role: 'ADMIN'
-            }
-        });
-    } catch (e) {
-        console.error('Setup Complete Error:', e);
-        res.status(500).json({
-            success: false,
-            message: 'Lỗi trong quá trình hoàn tất thiết lập: ' + e.message
-        });
-    }
-});
-
-// Reset setup (For reconfiguration)
-app.post('/api/setup/reset', (req, res) => {
-    try {
-        googleSheets.saveConfig({ is_setup_completed: false });
-        res.json({ success: true, message: 'Đã chuyển hệ thống về chế độ cấu hình Setup Wizard' });
-    } catch (e) {
-        res.status(500).json({ success: false, message: e.message });
-    }
-});
-
-// Setup page route
-app.get('/setup', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'setup.html'));
 });
 
 // Fallback to SPA index.html

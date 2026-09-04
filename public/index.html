@@ -164,10 +164,10 @@
           <span>Thương hiệu</span>
         </button>
 
-        <button class="btn btn-secondary btn-sm" id="btn-open-sheets-modal" onclick="appSheets.openModal()" title="Cấu hình & Đồng bộ Google Sheets Cloud Database">
-          <i class="fa-solid fa-table-cells" style="color: #0F9D58;"></i>
-          <span>Google Sheet</span>
-        </button>
+        <div class="badge" style="background: rgba(243, 128, 32, 0.12); color: #f38020; border: 1px solid rgba(243, 128, 32, 0.25); font-weight: 600; padding: 6px 12px; border-radius: 6px; font-size: 12px; display: inline-flex; align-items: center; gap: 6px;" title="Cơ sở dữ liệu đám mây Cloudflare D1 & R2 Storage">
+          <i class="fa-brands fa-cloudflare"></i>
+          <span>Cloudflare D1 & R2</span>
+        </div>
 
         <!-- User Profile Badge & Logout -->
         <div class="topbar-user-badge">
@@ -1303,71 +1303,6 @@
   </div>
 </div>
 
-<!-- ==========================================================================
-     MODAL: GOOGLE SHEETS CLOUD DATABASE MANAGEMENT
-     ========================================================================== -->
-<div class="modal-backdrop" id="modal-google-sheets">
-  <div class="modal-container" style="max-width: 560px; border-top: 3px solid #0F9D58;">
-    <div class="modal-header" style="background: #FFFFFF; color: var(--text-primary); border-bottom: 1px solid var(--border-color); padding: 14px 20px;">
-      <div class="modal-title" style="color: #0F9D58; font-size: 14.5px; font-weight: 700;">
-        <i class="fa-solid fa-table-cells"></i>
-        <span>Quản Trị Google Sheets Cloud Database</span>
-      </div>
-      <button class="modal-close" style="color: var(--text-secondary);" onclick="appSheets.closeModal()">&times;</button>
-    </div>
-
-    <div class="modal-body" style="padding: 20px 24px;">
-      <!-- Connection Status Card -->
-      <div id="sheets-connection-box" class="sheets-status-card success" style="margin-bottom: 18px; padding: 14px; border-radius: 8px; background: #ECFDF5; border: 1px solid #A7F3D0;">
-        <!-- Injected via sheets.js -->
-      </div>
-
-      <!-- Config Form -->
-      <div class="form-group" style="margin-bottom: 16px;">
-        <label for="sheets-spreadsheet-id-input" style="display: block; font-size: 13px; font-weight: 600; color: var(--primary-navy); margin-bottom: 6px;">
-          Google Spreadsheet ID hoặc URL:
-        </label>
-        <div style="display: flex; gap: 8px;">
-          <input type="text" id="sheets-spreadsheet-id-input" class="form-control" style="flex: 1;" placeholder="Nhập Spreadsheet ID hoặc Link">
-          <button type="button" class="btn btn-secondary btn-sm" id="btn-save-sheets-config" onclick="appSheets.saveConfig()" style="color: #0F9D58; border-color: #A7F3D0; font-weight: 600;">
-            <i class="fa-solid fa-link"></i> Lưu & Kết Nối
-          </button>
-        </div>
-      </div>
-
-      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid var(--border-color);">
-        <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; color: var(--text-primary);">
-          <input type="checkbox" id="sheets-auto-sync-check" onchange="appSheets.saveConfig()" checked style="accent-color: #0F9D58; width: 16px; height: 16px;">
-          <span>Tự động đồng bộ mỗi khi thêm/sửa/xóa nhân sự (Auto-sync)</span>
-        </label>
-        <a id="sheets-open-link-btn" href="#" target="_blank" class="btn btn-sm btn-secondary" style="color: #2563EB; font-size: 12px; height: 28px; padding: 0 10px; display: none;">
-          <i class="fa-solid fa-arrow-up-right-from-square"></i> Mở Sheet
-        </a>
-      </div>
-
-      <!-- Sync Actions Group -->
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
-        <button type="button" class="btn btn-primary" id="btn-sheets-sync-now" onclick="appSheets.syncToCloud()" style="height: 40px; font-size: 13px; background: #0F9D58; border-color: #0F9D58; justify-content: center;">
-          <i class="fa-solid fa-cloud-arrow-up"></i> Đẩy Lên Google Sheet (Sync All)
-        </button>
-
-        <button type="button" class="btn btn-secondary" id="btn-sheets-pull-now" onclick="appSheets.pullFromCloud()" style="height: 40px; font-size: 13px; justify-content: center;">
-          <i class="fa-solid fa-cloud-arrow-down"></i> Tải Về Từ Google Sheet (Pull All)
-        </button>
-      </div>
-
-      <div style="text-align: center; padding-top: 8px;">
-        <a href="/setup" style="font-size: 12px; color: var(--text-secondary); text-decoration: none; font-weight: 500;">
-          <i class="fa-solid fa-sliders"></i> Mở Trình Hướng Dẫn Cấu Hình Ban Đầu (Setup Wizard)
-        </a>
-      </div>
-    </div>
-
-    <div class="modal-footer" style="padding: 12px 20px; background: #F8FAFC; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end;">
-      <button type="button" class="btn btn-secondary btn-sm" onclick="appSheets.closeModal()">Đóng</button>
-    </div>
-  </div>
-</div>
 
 <!-- Logout Confirmation Modal -->
 <div class="modal-backdrop" id="modal-logout-confirm">
@@ -1690,84 +1625,6 @@
   </div>
 </div>
 
-<!-- ==========================================================================
-     MODAL: GOOGLE SHEETS CLOUD DATABASE SYNC
-     ========================================================================== -->
-<div class="modal-backdrop" id="modal-google-sheets">
-  <div class="modal-container" style="max-width: 580px; border-top: 3px solid #0F9D58;">
-    <div class="modal-header" style="background: #FFFFFF; color: var(--text-primary); border-bottom: 1px solid var(--border-color); padding: 14px 20px;">
-      <div class="modal-title" style="color: #0F9D58; font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
-        <i class="fa-solid fa-table-cells"></i>
-        <span>Đồng Bộ Cơ Sở Dữ Liệu Google Sheets</span>
-      </div>
-      <button class="modal-close" style="color: var(--text-secondary);" onclick="appSheets.closeModal()">&times;</button>
-    </div>
-
-    <div class="modal-body" style="padding: 20px 24px;">
-      <!-- Connection Status Card -->
-      <div id="sheets-connection-box" class="sheets-status-card warning">
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <i class="fa-solid fa-spinner fa-spin"></i>
-          <span>Đang tải thông tin kết nối...</span>
-        </div>
-      </div>
-
-      <!-- Quick Steps Guide -->
-      <div class="sheets-steps-guide">
-        <strong><i class="fa-solid fa-circle-info" style="color: var(--primary-navy);"></i> Hướng dẫn kết nối:</strong>
-        <ol>
-          <li>Tạo file Google Trang tính hoặc lưu file Excel hiện có dưới dạng <strong>Google Trang tính</strong>.</li>
-          <li>Bấm <strong>Chia sẻ</strong> và thêm email: <code style="background: #E2E8F0; padding: 1px 4px; border-radius: 3px; user-select: all; font-weight: 600;">hrm-sheet-service@make-472708.iam.gserviceaccount.com</code> (Quyền Editor).</li>
-          <li>Dán <strong>Link hoặc Spreadsheet ID</strong> vào ô bên dưới và bấm <strong>Lưu & Kết Nối</strong>.</li>
-        </ol>
-      </div>
-
-      <!-- Form Inputs -->
-      <div class="form-group" style="margin-bottom: 14px;">
-        <label style="font-weight: 600; font-size: 12.5px; margin-bottom: 6px; display: block;">
-          Google Spreadsheet ID hoặc Link URL <span class="req">*</span>
-        </label>
-        <div style="display: flex; gap: 8px;">
-          <input type="text" id="sheets-spreadsheet-id-input" class="form-control" placeholder="Dán link https://docs.google.com/spreadsheets/d/... hoặc Spreadsheet ID" style="flex: 1; font-size: 12px; font-family: monospace;">
-          <button type="button" class="btn btn-primary" id="btn-sheets-save" onclick="appSheets.saveConfig()" style="font-size: 12.5px; white-space: nowrap;">
-            <i class="fa-solid fa-link"></i> Lưu & Kết Nối
-          </button>
-        </div>
-      </div>
-
-      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; padding: 8px 12px; background: var(--bg-subtle); border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
-        <label style="display: flex; align-items: center; gap: 8px; font-size: 12.5px; cursor: pointer; margin: 0; font-weight: 500;">
-          <input type="checkbox" id="sheets-auto-sync-check" checked style="width: 16px; height: 16px; accent-color: #0F9D58;">
-          <span>Tự động đồng bộ lên Google Sheets khi thêm/sửa/xóa</span>
-        </label>
-        <a id="sheets-open-link-btn" href="#" target="_blank" class="btn btn-sm btn-secondary" style="font-size: 11.5px; display: none; text-decoration: none;">
-          <i class="fa-solid fa-arrow-up-right-from-square"></i> Mở Trang Tính
-        </a>
-      </div>
-
-      <!-- Sync Actions -->
-      <div style="border-top: 1px solid var(--border-color); padding-top: 16px;">
-        <div style="font-size: 12px; font-weight: 700; color: var(--text-primary); margin-bottom: 10px; text-transform: uppercase;">
-          Thao Tác Đồng Bộ Toàn Bộ (14 Bảng)
-        </div>
-        <div style="display: flex; gap: 10px;">
-          <button type="button" class="btn btn-secondary" id="btn-sheets-sync-now" onclick="appSheets.syncToCloud()" style="flex: 1; height: 38px; font-size: 12.5px; font-weight: 600; justify-content: center;">
-            <i class="fa-solid fa-cloud-arrow-up" style="color: #0F9D58;"></i>
-            <span>Đẩy Lên Google Sheet (Sync All)</span>
-          </button>
-          <button type="button" class="btn btn-secondary" id="btn-sheets-pull-now" onclick="appSheets.pullFromCloud()" style="flex: 1; height: 38px; font-size: 12.5px; font-weight: 600; justify-content: center;">
-            <i class="fa-solid fa-cloud-arrow-down" style="color: #2563EB;"></i>
-            <span>Tải Về Từ Google Sheet (Pull All)</span>
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <div class="modal-footer" style="padding: 12px 20px; background: #F8FAFC; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end;">
-      <button type="button" class="btn btn-secondary" onclick="appSheets.closeModal()">Đóng</button>
-    </div>
-  </div>
-</div>
 
 <!-- ==========================================================================
      MODAL: COMPANY BRANDING & SETTINGS (CÀI ĐẶT THƯƠNG HIỆU DOANH NGHIỆP)
@@ -2319,7 +2176,6 @@
 <script src="js/accounts.js"></script>
 <script src="js/logs.js"></script>
 <script src="js/trash.js"></script>
-<script src="js/sheets.js"></script>
 <script src="js/app.js"></script>
 
 </body>

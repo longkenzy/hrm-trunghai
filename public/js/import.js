@@ -798,17 +798,6 @@ const appImport = {
         ? appData.getApiHeaders()
         : {};
 
-      let clientSpreadsheetId = '';
-      let clientCredentials = null;
-      try {
-        const stored = localStorage.getItem('hrm_google_sheets_config');
-        if (stored) {
-          const cfg = JSON.parse(stored);
-          clientSpreadsheetId = cfg.spreadsheetId || '';
-          clientCredentials = cfg.credentials || null;
-        }
-      } catch (e) {}
-
       const res = await fetch('/api/employees/import-excel', {
         method: 'POST',
         headers: {
@@ -819,8 +808,6 @@ const appImport = {
           employees: toImport,
           overwrite: overwrite,
           skip_errors: chkSkipErrors,
-          spreadsheetId: clientSpreadsheetId,
-          googleCredentials: clientCredentials,
           operator_id: appAuth.currentUser?.employee_id || 'TH-0001',
           operator_name: appAuth.currentUser?.full_name || 'Admin',
           operator_role: appAuth.currentUser?.role || 'ADMIN'
