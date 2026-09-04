@@ -2,12 +2,3 @@ name = "hrm-trunghai"
 compatibility_date = "2024-09-01"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = "public"
-
-[[d1_databases]]
-binding = "DB"
-database_name = "hrm-database"
-database_id = "hrm-database"
-
-[[r2_buckets]]
-binding = "R2"
-bucket_name = "hrm-media"
