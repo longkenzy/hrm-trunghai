@@ -48,6 +48,7 @@ const appData = {
         this.contracts = json.tables['10_Contracts'] || [];
         this.accounts = json.tables['11_System_Accounts'] || [];
         this.trash = json.tables['13_Recycle_Bin'] || [];
+        this.masterProfiles = json.tables['00_Master_Profiles'] || [];
 
         // Build lookup maps
         this.buildMaps();
@@ -85,6 +86,13 @@ const appData = {
     this.empMap = {};
     this.employees.forEach(e => {
       this.empMap[e.employee_id] = e;
+    });
+
+    this.masterMap = {};
+    (this.masterProfiles || []).forEach(m => {
+      if (m['Mã nhân viên']) {
+        this.masterMap[m['Mã nhân viên']] = m;
+      }
     });
   }
 };

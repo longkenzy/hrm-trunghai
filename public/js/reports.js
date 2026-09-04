@@ -7,7 +7,7 @@ const appReports = {
   fluctuationList: [],
   filteredList: [],
   currentPage: 1,
-  pageSize: 20,
+  pageSize: 25,
   monthlyChart: null,
   deptChart: null,
 

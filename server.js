@@ -123,70 +123,35 @@ function optionalAuth(req, res, next) {
 // Path to JSON database
 const DB_PATH = path.join(__dirname, 'database_schema.json');
 
-// Ensure default admin & demo accounts exist in database
+// Ensure default admin exists in database (only if no admin exists to prevent lockout)
 function ensureDefaultAccounts(db) {
     if (!db || typeof db !== 'object') return;
     if (!db.tables) db.tables = {};
-    if (!db.tables['11_System_Accounts']) db.tables['11_System_Accounts'] = [];
+    if (!Array.isArray(db.tables['11_System_Accounts'])) {
+        db.tables['11_System_Accounts'] = [];
+    }
 
     const accounts = db.tables['11_System_Accounts'];
+
+    // If an ADMIN account already exists, do nothing (do not recreate deleted demo accounts)
+    const hasAdmin = accounts.some(a => a.role === 'ADMIN');
+    if (hasAdmin) {
+        return;
+    }
+
+    // Only ensure a default Super Admin if NO admin exists in the entire system
     const adminHash = bcrypt.hashSync('123456', SALT_ROUNDS);
-
-    // 1. Ensure Super Admin account (Huỳnh Thanh Long)
-    let adminAcc = accounts.find(a => 
-        (a.employee_id && (a.employee_id === 'TH-0001' || a.employee_id === 'TH-1948')) ||
-        (a.account_email && (a.account_email.toLowerCase() === 'longht@trunghaico.vn' || a.account_email.toLowerCase() === 'admin@trunghai.vn')) ||
-        (a.username && (a.username.toLowerCase() === 'longht' || a.username.toLowerCase() === 'admin'))
-    );
-
-    if (adminAcc) {
-        adminAcc.account_id = adminAcc.account_id || 'ACC-TH0001';
-        adminAcc.employee_id = adminAcc.employee_id || 'TH-0001';
-        adminAcc.username = adminAcc.username || 'longht';
-        adminAcc.full_name = adminAcc.full_name || 'Huỳnh Thanh Long';
-        adminAcc.account_email = adminAcc.account_email || 'longht@trunghaico.vn';
-        adminAcc.role = 'ADMIN';
-        adminAcc.account_status = 'Kích hoạt';
-        if (!adminAcc.password) {
-            adminAcc.password = adminHash;
-        }
-    } else {
-        accounts.unshift({
-            account_id: 'ACC-TH0001',
-            employee_id: 'TH-0001',
-            username: 'longht',
-            full_name: 'Huỳnh Thanh Long',
-            account_email: 'longht@trunghaico.vn',
-            role: 'ADMIN',
-            account_status: 'Kích hoạt',
-            password: adminHash,
-            created_at: new Date().toISOString()
-        });
-    }
-
-    // 2. Ensure Standard User demo account (Trần Minh Đức)
-    let userAcc = accounts.find(a => 
-        (a.employee_id && a.employee_id === 'TH-0003') ||
-        (a.account_email && a.account_email.toLowerCase() === 'test@trunghaico.vn')
-    );
-
-    if (userAcc) {
-        userAcc.account_email = userAcc.account_email || 'test@trunghaico.vn';
-        userAcc.role = userAcc.role || 'USER';
-        userAcc.account_status = 'Kích hoạt';
-    } else {
-        accounts.push({
-            account_id: 'ACC-TH0003',
-            employee_id: 'TH-0003',
-            username: 'test',
-            full_name: 'Trần Minh Đức',
-            account_email: 'test@trunghaico.vn',
-            role: 'USER',
-            account_status: 'Kích hoạt',
-            password: adminHash,
-            created_at: new Date().toISOString()
-        });
-    }
+    accounts.unshift({
+        account_id: 'ACC-TH1948',
+        employee_id: 'TH-1948',
+        username: 'longht',
+        full_name: 'Huỳnh Thanh Long',
+        account_email: 'longht@trunghaico.vn',
+        role: 'ADMIN',
+        account_status: 'Kích hoạt',
+        password: adminHash,
+        created_at: new Date().toISOString()
+    });
 }
 
 // Helper to load DB
@@ -1726,7 +1691,7 @@ app.post('/api/employees/import-excel', (req, res) => {
                 });
 
                 contracts.unshift({
-                    contract_id: `HD-${empId.replace('-', '')}-01`,
+                    contract_id: empId,
                     employee_id: empId,
                     full_name: fullName,
                     contract_type: contractType,
@@ -1815,6 +1780,8 @@ app.get('/api/employees/:id', (req, res) => {
     const ins = insurance.find(i => i.employee_id === id) || {};
     const cont = contracts.filter(c => c.employee_id === id);
     const acc = accounts.find(a => a.employee_id === id) || {};
+    const masterProfiles = db.tables['00_Master_Profiles'] || [];
+    const masterProfile = masterProfiles.find(m => m['Mã nhân viên'] === id) || null;
 
     res.json({
         success: true,
@@ -1831,28 +1798,36 @@ app.get('/api/employees/:id', (req, res) => {
             salary: sal,
             insurance: ins,
             contracts: cont,
-            account: acc
+            account: acc,
+            master_profile: masterProfile
         }
     });
 });
 
-// 5. CREATE NEW EMPLOYEE (FULL 34 ATTRIBUTES)
+// 5. CREATE NEW EMPLOYEE (FULL 115 STANDARDIZED ATTRIBUTES)
 app.post('/api/employees', (req, res) => {
     const db = loadDatabase();
     const body = req.body;
+    const masterData = body.master_profile ? { ...body.master_profile } : { ...body };
 
-    if (!body.full_name || !body.department_id || !body.position_id) {
-        return res.status(400).json({ success: false, message: 'Họ tên, phòng ban và vị trí là bắt buộc' });
+    const fullName = (masterData['Họ và tên'] || body.full_name || '').trim();
+    const deptNameOrId = masterData['Đơn vị công tác'] || masterData['Mã đơn vị công tác'] || body.department_id || body.department_name || '';
+    const posNameOrId = masterData['Vị trí công việc'] || masterData['Mã vị trí công việc'] || body.position_id || body.position_name || '';
+
+    if (!fullName) {
+        return res.status(400).json({ success: false, message: 'Họ và tên là bắt buộc (*)' });
     }
 
     const employees = db.tables['03_Employees'] || [];
     const depts = db.tables['01_Departments'] || [];
     const pos = db.tables['02_Positions'] || [];
-    const deptObj = depts.find(d => d.department_id === body.department_id) || {};
-    const posObj = pos.find(p => p.position_id === body.position_id) || {};
     
+    // Resolve Department & Position
+    const deptObj = depts.find(d => d.department_id === deptNameOrId || d.department_name === deptNameOrId) || depts[0] || { department_id: 'HR', department_name: 'Phòng Hành Chính Nhân Sự' };
+    const posObj = pos.find(p => p.position_id === posNameOrId || p.position_name === posNameOrId) || pos[0] || { position_id: 'POS-01', position_name: 'Chuyên viên' };
+
     // Auto-generate employee_id if not provided
-    let newId = body.employee_id;
+    let newId = (masterData['Mã nhân viên'] || body.employee_id || '').trim();
     if (!newId) {
         let maxNum = 2000;
         employees.forEach(e => {
@@ -1870,49 +1845,69 @@ app.post('/api/employees', (req, res) => {
         return res.status(400).json({ success: false, message: `Mã nhân viên ${newId} đã tồn tại` });
     }
 
-    const baseSal = parseFloat(body.base_salary) || 0;
-    const totSal = parseFloat(body.total_salary) || (baseSal * 1.25);
-    const startDate = body.start_date || body.trial_start_date || new Date().toISOString().split('T')[0];
-    const endDate = body.end_date || 'Không xác định';
+    // Normalize masterData
+    masterData['Mã nhân viên'] = newId;
+    masterData['Họ và tên'] = fullName;
+    masterData['Đơn vị công tác'] = deptObj.department_name || deptNameOrId;
+    masterData['Mã đơn vị công tác'] = deptObj.department_id || '';
+    masterData['Vị trí công việc'] = posObj.position_name || posNameOrId;
+    masterData['Mã vị trí công việc'] = posObj.position_id || '';
 
+    const baseSal = parseFloat(masterData['Lương cơ bản']) || parseFloat(body.base_salary) || 0;
+    const totSal = parseFloat(masterData['Tổng lương']) || parseFloat(body.total_salary) || (baseSal * 1.25);
+    const startDate = masterData['Ngày học việc'] || masterData['Ngày thử việc'] || masterData['Ngày chính thức'] || body.start_date || new Date().toISOString().split('T')[0];
+    const endDate = masterData['Ngày hết hiệu lực'] || masterData['Ngày nghỉ việc'] || body.end_date || 'Không xác định';
+
+    // Build 03_Employees entry
     const newEmp = {
         employee_id: newId,
-        time_attendance_code: body.time_attendance_code || newId.replace('TH-', ''),
-        full_name: body.full_name,
-        gender: body.gender || 'Nam',
-        date_of_birth: body.date_of_birth || null,
-        birth_place: body.birth_place || '',
-        native_place: body.native_place || '',
-        ethnicity: body.ethnicity || 'Kinh',
-        religion: body.religion || 'Không',
-        nationality: body.nationality || 'Việt Nam',
-        marital_status: body.marital_status || 'Độc thân',
-        children_count: parseInt(body.children_count, 10) || 0,
-        tax_code: body.tax_code || '',
-        company_id: body.company_id || deptObj.company_id || 'TH-CORP',
-        department_id: body.department_id,
-        position_id: body.position_id,
-        job_rank: body.job_rank || 'Cấp 3 - Chuyên viên / Nhân viên Nghiệp vụ',
-        job_title: body.job_title || posObj.position_name || '',
-        direct_manager_id: body.direct_manager_id || null,
-        direct_manager_name: body.direct_manager_name || '',
-        indirect_manager_id: body.indirect_manager_id || null,
-        indirect_manager_name: body.indirect_manager_name || '',
-        work_location: body.work_location || 'Trụ sở Tổng công ty - Tòa nhà Trung Hải, Hà Nội',
-        work_area: body.work_area || 'Khối Văn phòng Tổng công ty',
-        employment_status: body.employment_status || 'Đang làm việc',
-        labor_nature: body.labor_nature || 'Chính thức',
+        time_attendance_code: masterData['Mã chấm công'] || body.time_attendance_code || newId.replace('TH-', ''),
+        full_name: fullName,
+        alias_name: masterData['Tên gọi khác'] || '',
+        gender: masterData['Giới tính'] || body.gender || 'Nam',
+        date_of_birth: masterData['Ngày sinh'] || body.date_of_birth || null,
+        birth_place: masterData['Nơi sinh'] || body.birth_place || '',
+        native_place: masterData['Nguyên quán'] || body.native_place || '',
+        ethnicity: masterData['Dân tộc'] || body.ethnicity || 'Kinh',
+        religion: masterData['Tôn giáo'] || body.religion || 'Không',
+        nationality: masterData['Quốc tịch'] || body.nationality || 'Việt Nam',
+        marital_status: masterData['Tình trạng hôn nhân'] || body.marital_status || 'Độc thân',
+        children_count: parseInt(masterData['Số con'] || body.children_count || 0, 10) || 0,
+        tax_code: masterData['MST cá nhân'] || body.tax_code || '',
+        company_id: deptObj.company_id || 'TH-CORP',
+        department_id: deptObj.department_id || 'HR',
+        department_name: deptObj.department_name || deptNameOrId,
+        position_id: posObj.position_id || 'POS-01',
+        position_name: posObj.position_name || posNameOrId,
+        job_rank: masterData['Bậc'] || masterData['Bậc lương'] || body.job_rank || 'Cấp 3 - Chuyên viên / Nhân viên Nghiệp vụ',
+        job_level: masterData['Cấp'] || 'Cấp 3',
+        job_title: masterData['Chức danh'] || posObj.position_name || posNameOrId,
+        direct_manager_id: masterData['Mã quản lý trực tiếp'] || body.direct_manager_id || null,
+        direct_manager_name: masterData['Quản lý trực tiếp'] || body.direct_manager_name || '',
+        indirect_manager_id: masterData['Mã quản lý gián tiếp'] || body.indirect_manager_id || null,
+        indirect_manager_name: masterData['Quản lý gián tiếp'] || body.indirect_manager_name || '',
+        work_location: masterData['Địa điểm làm việc'] || body.work_location || 'Trụ sở Tổng công ty - Tòa nhà Trung Hải, Hà Nội',
+        work_area: masterData['Khu vực làm việc'] || body.work_area || 'Khối Văn phòng Tổng công ty',
+        employment_status: masterData['Trạng thái lao động'] || body.employment_status || 'Đang làm việc',
+        labor_nature: masterData['Tính chất lao động'] || body.labor_nature || 'Chính thức',
         start_date: startDate,
         end_date: endDate,
-        contract_type: body.contract_type || 'Hợp đồng lao động không xác định thời hạn',
-        probation_start_date: startDate,
-        trial_start_date: startDate,
-        official_date: body.official_date || startDate,
-        resignation_date: body.resignation_date || (body.employment_status === 'Đã nghỉ việc' ? endDate : null),
-        expected_retirement_date: body.expected_retirement_date || null,
-        other_certificates: body.other_certificates || '',
-        seniority_text: 'Mới gia nhập',
-        is_blacklisted: false
+        contract_type: masterData['Loại hợp đồng'] || body.contract_type || 'Hợp đồng lao động không xác định thời hạn',
+        apprentice_start_date: masterData['Ngày học việc'] || null,
+        probation_start_date: masterData['Ngày thử việc'] || startDate,
+        trial_start_date: masterData['Ngày thử việc'] || startDate,
+        official_date: masterData['Ngày chính thức'] || startDate,
+        resignation_date: masterData['Ngày nghỉ việc'] || (masterData['Trạng thái lao động'] === 'Đã nghỉ việc' ? endDate : null),
+        resignation_reason: masterData['Lý do nghỉ'] || '',
+        resignation_reason_group: masterData['Nhóm lý do nghỉ'] || '',
+        expected_retirement_date: masterData['Ngày nghỉ hưu dự kiến'] || null,
+        is_blacklisted: masterData['Thuộc danh sách đen'] === 'Có',
+        approved_by: masterData['Người duyệt'] || 'Huỳnh Thanh Long',
+        labor_book_number: masterData['Số sổ QL lao động'] || '',
+        recruiter_name: masterData['Nhân sự khai thác'] || '',
+        candidate_source: masterData['Nguồn ứng viên'] || '',
+        other_certificates: masterData['Bằng cấp chuyên môn khác'] || body.other_certificates || '',
+        seniority_text: masterData['Thâm niên'] || 'Mới gia nhập'
     };
 
     employees.unshift(newEmp);
@@ -1922,24 +1917,31 @@ app.post('/api/employees', (req, res) => {
     const contacts = db.tables['04_Contacts_Addresses'] || [];
     contacts.unshift({
         employee_id: newId,
-        full_name: body.full_name,
-        mobile_phone: body.mobile_phone || '',
-        home_phone: body.home_phone || '',
-        other_phone: '',
-        work_email: body.work_email || `${newId.toLowerCase()}@trunghaico.vn`,
-        personal_email: body.personal_email || '',
-        permanent_address_full: body.permanent_address_full || '',
-        permanent_country: 'Việt Nam',
-        permanent_province: body.permanent_province || '',
-        permanent_district: body.permanent_district || '',
-        permanent_ward: body.permanent_ward || '',
-        permanent_street: body.permanent_street || '',
-        current_address_full: body.current_address_full || '',
-        current_country: 'Việt Nam',
-        current_province: body.current_province || '',
-        current_district: body.current_district || '',
-        current_ward: body.current_ward || '',
-        current_street: body.current_street || ''
+        full_name: fullName,
+        mobile_phone: masterData['ĐT di động'] || body.mobile_phone || '',
+        office_phone: masterData['ĐT cơ quan'] || body.office_phone || '',
+        home_phone: masterData['ĐT nhà riêng'] || body.home_phone || '',
+        other_phone: masterData['ĐT khác'] || '',
+        work_email: masterData['Email cơ quan'] || body.work_email || `${newId.toLowerCase()}@trunghaico.vn`,
+        personal_email: masterData['Email cá nhân'] || body.personal_email || '',
+        other_email: masterData['Email khác'] || '',
+        skype: masterData['Skype'] || '',
+        facebook: masterData['Facebook'] || '',
+        permanent_address_full: masterData['Hộ khẩu thường trú'] || body.permanent_address_full || '',
+        permanent_country: masterData['Quốc gia (Thường trú)'] || 'Việt Nam',
+        permanent_province: masterData['Tỉnh/Thành phố (Thường trú)'] || '',
+        permanent_district: masterData['Quận/Huyện (Thường trú)'] || '',
+        permanent_ward: masterData['Phường/Xã (Thường trú)'] || '',
+        permanent_street: masterData['Số nhà, đường phố (Thường trú)'] || '',
+        household_book_number: masterData['Số sổ hộ khẩu'] || '',
+        household_code: masterData['Mã số hộ gia đình'] || '',
+        is_household_head: masterData['Là chủ hộ'] || 'Không',
+        current_address_full: masterData['Chỗ ở hiện nay'] || body.current_address_full || '',
+        current_country: masterData['Quốc gia (Hiện nay)'] || 'Việt Nam',
+        current_province: masterData['Tỉnh/Thành phố (Hiện nay)'] || '',
+        current_district: masterData['Quận/Huyện (Hiện nay)'] || '',
+        current_ward: masterData['Phường/Xã (Hiện nay)'] || '',
+        current_street: masterData['Số nhà, đường phố (Hiện nay)'] || ''
     });
     db.tables['04_Contacts_Addresses'] = contacts;
 
@@ -1947,28 +1949,32 @@ app.post('/api/employees', (req, res) => {
     const identity = db.tables['05_Identity_Docs'] || [];
     identity.unshift({
         employee_id: newId,
-        full_name: body.full_name,
-        doc_type: body.doc_type || 'CCCD',
-        id_number: body.id_number || '',
-        id_issue_date: body.id_issue_date || null,
-        id_issue_place: body.id_issue_place || 'Cục Cảnh sát Quản lý hành chính về trật tự xã hội',
-        id_expiry_date: body.id_expiry_date || null,
-        passport_number: body.passport_number || null,
-        passport_issue_date: body.passport_issue_date || null
+        full_name: fullName,
+        doc_type: masterData['Loại giấy tờ'] || body.doc_type || 'CCCD',
+        id_number: masterData['Số CMND'] || body.id_number || '',
+        id_issue_date: masterData['Ngày cấp giấy tờ'] || body.id_issue_date || null,
+        id_issue_place: masterData['Nơi cấp giấy tờ'] || body.id_issue_place || 'Cục Cảnh sát Quản lý hành chính về trật tự xã hội',
+        id_expiry_date: masterData['Ngày hết hạn giấy tờ'] || body.id_expiry_date || null,
+        passport_number: masterData['Số Hộ chiếu'] || body.passport_number || null,
+        passport_issue_date: masterData['Ngày cấp Hộ chiếu'] || null,
+        passport_issue_place: masterData['Nơi cấp Hộ chiếu'] || null,
+        passport_expiry_date: masterData['Ngày hết hạn Hộ chiếu'] || null
     });
     db.tables['05_Identity_Docs'] = identity;
 
     // Emergency Contacts
     const emergency = db.tables['06_Emergency_Contacts'] || [];
-    if (body.emergency_name || body.emergency_contact_name) {
+    const emergName = masterData['Họ và tên (LHKC)'] || body.emergency_name || body.emergency_contact_name;
+    if (emergName) {
         emergency.unshift({
             employee_id: newId,
-            full_name: body.full_name,
-            contact_name: body.emergency_name || body.emergency_contact_name || '',
-            relationship: body.emergency_relation || body.emergency_contact_relation || 'Vợ',
-            mobile_phone: body.emergency_phone || body.emergency_contact_phone || '',
-            email: '',
-            address: body.permanent_address_full || ''
+            full_name: fullName,
+            contact_name: emergName,
+            relationship: masterData['Quan hệ (LHKC)'] || body.emergency_relation || 'Vợ',
+            mobile_phone: masterData['ĐT di động (LHKC)'] || body.emergency_phone || '',
+            home_phone: masterData['ĐT nhà riêng (LHKC)'] || '',
+            email: masterData['Email (LHKC)'] || '',
+            address: masterData['Địa chỉ (LHKC)'] || masterData['Hộ khẩu thường trú'] || ''
         });
         db.tables['06_Emergency_Contacts'] = emergency;
     }
@@ -1977,15 +1983,16 @@ app.post('/api/employees', (req, res) => {
     const education = db.tables['07_Education'] || [];
     education.unshift({
         employee_id: newId,
-        full_name: body.full_name,
-        education_level: body.education_level || 'Đại học',
+        full_name: fullName,
+        cultural_level: masterData['Trình độ văn hóa'] || '12/12',
+        education_level: masterData['Trình độ đào tạo'] || body.education_level || 'Đại học',
         degree_type: 'Chính quy',
-        institution: body.institution || 'Đại học Xây Dựng Hà Nội',
-        faculty: 'Khoa Chuyên ngành',
-        major: body.major || 'Kỹ thuật Xây dựng',
-        other_certificates: body.other_certificates || '',
-        graduation_year: 2020,
-        classification: 'Khá'
+        institution: masterData['Nơi đào tạo'] || 'Đại học Xây Dựng Hà Nội',
+        faculty: masterData['Khoa'] || 'Khoa Chuyên ngành',
+        major: masterData['Chuyên ngành'] || body.major || 'Kỹ thuật Xây dựng',
+        other_certificates: masterData['Bằng cấp chuyên môn khác'] || body.other_certificates || '',
+        graduation_year: parseInt(masterData['Năm tốt nghiệp'], 10) || 2020,
+        classification: masterData['Xếp loại'] || 'Khá'
     });
     db.tables['07_Education'] = education;
 
@@ -1993,14 +2000,15 @@ app.post('/api/employees', (req, res) => {
     const salaries = db.tables['08_Salaries_Banks'] || [];
     salaries.unshift({
         employee_id: newId,
-        full_name: body.full_name,
-        salary_grade: body.salary_grade || 3,
+        full_name: fullName,
+        salary_grade: parseInt(masterData['Bậc lương'], 10) || 3,
+        salary_coefficient: parseFloat(masterData['Hệ số lương']) || 2.34,
         base_salary: baseSal,
         total_salary: totSal,
-        insurance_salary: Math.min(baseSal, 23400000),
-        bank_account_number: body.bank_account_number || '',
-        bank_name: body.bank_name || 'Vietcombank',
-        bank_branch: body.bank_branch || ''
+        insurance_salary: parseFloat(masterData['Lương đóng BH']) || Math.min(baseSal, 23400000),
+        bank_account_number: masterData['TK ngân hàng'] || body.bank_account_number || '',
+        bank_name: masterData['Ngân hàng'] || body.bank_name || 'Vietcombank',
+        bank_branch: masterData['Chi nhánh'] || body.bank_branch || ''
     });
     db.tables['08_Salaries_Banks'] = salaries;
 
@@ -2008,82 +2016,49 @@ app.post('/api/employees', (req, res) => {
     const insurance = db.tables['09_Insurance_Welfare'] || [];
     insurance.unshift({
         employee_id: newId,
-        full_name: body.full_name,
-        has_insurance: body.has_insurance || 'Tham gia đầy đủ',
-        social_insurance_book_no: body.social_insurance_book_no || '',
-        social_insurance_code: body.social_insurance_code || body.social_insurance_book_no || '',
-        insurance_join_date: startDate,
-        total_insurance_rate: 0.105,
-        social_insurance_rate: 8,
-        health_insurance_rate: 1.5,
-        unemployment_insurance_rate: 1,
-        hospital_registered: body.hospital_registered || 'Bệnh viện Bạch Mai - Hà Nội',
-        union_member: 'Đoàn viên'
+        full_name: fullName,
+        has_insurance: masterData['Tham gia bảo hiểm'] || 'Có',
+        social_insurance_book_no: masterData['Số sổ BHXH'] || body.social_insurance_book_no || '',
+        social_insurance_code: masterData['Mã số BHXH'] || body.social_insurance_code || '',
+        insurance_join_date: masterData['Ngày tham gia BH'] || startDate,
+        total_insurance_rate: masterData['Tỷ lệ đóng BH'] || '32%',
+        social_insurance_rate: masterData['Tỷ lệ đóng BHXH'] || '25.5%',
+        health_insurance_rate: masterData['Tỷ lệ đóng BHYT'] || '4.5%',
+        unemployment_insurance_rate: masterData['Tỷ lệ đóng BHTN'] || '2%',
+        insurance_province_code: masterData['Mã tỉnh cấp'] || '001',
+        health_insurance_card_no: masterData['Số thẻ BHYT'] || '',
+        hospital_registered: masterData['Nơi đăng ký KCB'] || body.hospital_registered || 'Bệnh viện Bạch Mai - Hà Nội',
+        union_member: masterData['Tham gia công đoàn'] || 'Có'
     });
     db.tables['09_Insurance_Welfare'] = insurance;
 
-    // Contract
+    // Contracts
     const contracts = db.tables['10_Contracts'] || [];
     contracts.unshift({
-        contract_id: `HD-${newId.replace('-', '')}-01`,
+        contract_id: newId,
         employee_id: newId,
-        full_name: body.full_name,
-        contract_type: body.contract_type || 'Hợp đồng lao động không xác định thời hạn',
+        full_name: fullName,
+        contract_type: masterData['Loại hợp đồng'] || body.contract_type || 'Hợp đồng lao động không xác định thời hạn',
         start_date: startDate,
         end_date: endDate,
-        trial_start_date: startDate,
-        official_date: startDate,
+        trial_start_date: masterData['Ngày thử việc'] || startDate,
+        official_date: masterData['Ngày chính thức'] || startDate,
+        effective_date: masterData['Ngày có hiệu lực'] || startDate,
+        expiry_date: masterData['Ngày hết hiệu lực'] || (endDate !== 'Không xác định' ? endDate : null),
         contract_status: 'HIỆU LỰC'
     });
     db.tables['10_Contracts'] = contracts;
 
-    // Master Profiles Sheet (34 Columns)
-    if (db.tables['00_Master_Profiles']) {
-        const emergStr = (body.emergency_name || body.emergency_contact_name)
-            ? `${body.emergency_name || body.emergency_contact_name} (${body.emergency_relation || 'Người thân'}) - ${body.emergency_phone || ''}`
-            : '';
-        db.tables['00_Master_Profiles'].unshift({
-            'Mã nhân viên': newId,
-            'Họ và tên': body.full_name,
-            'Ngày bắt đầu làm việc': startDate,
-            'Ngày kết thúc': endDate,
-            'Loại hợp đồng': body.contract_type || 'Hợp đồng lao động không xác định thời hạn',
-            'Phòng/Ban': deptObj.department_name || body.department_id,
-            'Cấp bậc': body.job_rank || 'Cấp 3 - Chuyên viên / Nhân viên Nghiệp vụ',
-            'Chức danh': body.job_title || posObj.position_name || '',
-            'Điện thoại': body.mobile_phone || '',
-            'Email': body.work_email || `${newId.toLowerCase()}@trunghaico.vn`,
-            'Địa điểm làm việc': body.work_location || 'Trụ sở Tổng công ty - Tòa nhà Trung Hải, Hà Nội',
-            'Ngày tháng năm sinh': body.date_of_birth || '',
-            'Giới tính': body.gender || 'Nam',
-            'Nơi sinh': body.birth_place || '',
-            'Tình trạng hôn nhân': body.marital_status || 'Độc thân',
-            'Số con': parseInt(body.children_count, 10) || 0,
-            'Nguyên quán': body.native_place || '',
-            'Dân tộc': body.ethnicity || 'Kinh',
-            'Tôn giáo': body.religion || 'Không',
-            'Số CCCD/Hộ chiếu': body.id_number || '',
-            'Ngày cấp': body.id_issue_date || '',
-            'Nơi cấp': body.id_issue_place || 'Cục Cảnh sát Quản lý hành chính về trật tự xã hội',
-            'Địa chỉ thường trú': body.permanent_address_full || '',
-            'Địa chỉ tạm trú': body.current_address_full || '',
-            'Số sổ BHXH': body.social_insurance_book_no || '',
-            'Nơi đăng ký khám, chữa bệnh ban đầu': body.hospital_registered || '',
-            'Mã số thuế cá nhân': body.tax_code || '',
-            'Số tài khoản': body.bank_account_number || '',
-            'Tên ngân hàng': body.bank_name || 'Vietcombank',
-            'Tên chi nhánh/Phòng Giao dịch': body.bank_branch || '',
-            'Trình độ học vấn': body.education_level || 'Đại học',
-            'Trình độ chuyên môn: Chuyên ngành học': body.major || '',
-            'Bằng cấp chuyên môn khác': body.other_certificates || '',
-            'Liên lạc khẩn cấp (họ tên, mối quan hệ, số điện thoại)': emergStr
-        });
+    // Master Profiles (00_Master_Profiles)
+    if (!db.tables['00_Master_Profiles']) {
+        db.tables['00_Master_Profiles'] = [];
     }
+    db.tables['00_Master_Profiles'].unshift(masterData);
 
     recordLog(db, {
         action_type: 'CREATE',
         module: 'Nhân sự',
-        description: `Thêm mới hồ sơ nhân sự ${newId} - ${body.full_name} (${body.job_title || posObj.position_name || ''})`,
+        description: `Thêm mới hồ sơ nhân sự ${newId} - ${fullName} (${masterData['Chức danh'] || posObj.position_name || ''})`,
         user_id: body.operator_id || 'TH-1948',
         user_name: body.operator_name || 'Huỳnh Thanh Long',
         user_role: body.operator_role || 'ADMIN',
@@ -2099,13 +2074,12 @@ app.post('/api/employees', (req, res) => {
     });
 });
 
-
-
-// 6. UPDATE EMPLOYEE (FULL 34 ATTRIBUTES & CHANGEABLE EMPLOYEE_ID)
+// 6. UPDATE EMPLOYEE (FULL 115 STANDARDIZED ATTRIBUTES & CHANGEABLE EMPLOYEE_ID)
 app.put('/api/employees/:id', (req, res) => {
     const db = loadDatabase();
     const id = req.params.id;
     const body = req.body;
+    const masterData = body.master_profile ? { ...body.master_profile } : { ...body };
 
     const employees = db.tables['03_Employees'] || [];
     const empIdx = employees.findIndex(e => e.employee_id === id);
@@ -2113,7 +2087,7 @@ app.put('/api/employees/:id', (req, res) => {
         return res.status(404).json({ success: false, message: 'Nhân viên không tồn tại' });
     }
 
-    const requestedId = (body.employee_id || '').trim();
+    const requestedId = (masterData['Mã nhân viên'] || body.employee_id || '').trim();
     const targetId = requestedId || id;
 
     // Check duplicate if changing employee_id
@@ -2128,52 +2102,84 @@ app.put('/api/employees/:id', (req, res) => {
 
     const depts = db.tables['01_Departments'] || [];
     const pos = db.tables['02_Positions'] || [];
-    const targetDeptId = body.department_id || employees[empIdx].department_id;
-    const targetPosId = body.position_id || employees[empIdx].position_id;
-    const deptObj = depts.find(d => d.department_id === targetDeptId) || {};
-    const posObj = pos.find(p => p.position_id === targetPosId) || {};
+    const deptNameOrId = masterData['Đơn vị công tác'] || masterData['Mã đơn vị công tác'] || body.department_id || employees[empIdx].department_id;
+    const posNameOrId = masterData['Vị trí công việc'] || masterData['Mã vị trí công việc'] || body.position_id || employees[empIdx].position_id;
+    const deptObj = depts.find(d => d.department_id === deptNameOrId || d.department_name === deptNameOrId) || {};
+    const posObj = pos.find(p => p.position_id === posNameOrId || p.position_name === posNameOrId) || {};
+
+    const fullName = (masterData['Họ và tên'] || body.full_name || employees[empIdx].full_name || '').trim();
+
+    masterData['Mã nhân viên'] = targetId;
+    if (fullName) masterData['Họ và tên'] = fullName;
+    if (deptObj.department_name) masterData['Đơn vị công tác'] = deptObj.department_name;
+    if (deptObj.department_id) masterData['Mã đơn vị công tác'] = deptObj.department_id;
+    if (posObj.position_name) masterData['Vị trí công việc'] = posObj.position_name;
+    if (posObj.position_id) masterData['Mã vị trí công việc'] = posObj.position_id;
 
     // 1. Update core employee
     employees[empIdx] = {
         ...employees[empIdx],
         ...body,
         employee_id: targetId,
-        children_count: body.children_count !== undefined ? parseInt(body.children_count, 10) : employees[empIdx].children_count
+        full_name: fullName,
+        gender: masterData['Giới tính'] || body.gender || employees[empIdx].gender,
+        date_of_birth: masterData['Ngày sinh'] !== undefined ? masterData['Ngày sinh'] : (body.date_of_birth || employees[empIdx].date_of_birth),
+        birth_place: masterData['Nơi sinh'] !== undefined ? masterData['Nơi sinh'] : (body.birth_place || employees[empIdx].birth_place),
+        native_place: masterData['Nguyên quán'] !== undefined ? masterData['Nguyên quán'] : (body.native_place || employees[empIdx].native_place),
+        ethnicity: masterData['Dân tộc'] || body.ethnicity || employees[empIdx].ethnicity,
+        religion: masterData['Tôn giáo'] || body.religion || employees[empIdx].religion,
+        nationality: masterData['Quốc tịch'] || body.nationality || employees[empIdx].nationality,
+        marital_status: masterData['Tình trạng hôn nhân'] || body.marital_status || employees[empIdx].marital_status,
+        tax_code: masterData['MST cá nhân'] !== undefined ? masterData['MST cá nhân'] : (body.tax_code || employees[empIdx].tax_code),
+        department_id: deptObj.department_id || employees[empIdx].department_id,
+        department_name: deptObj.department_name || employees[empIdx].department_name,
+        position_id: posObj.position_id || employees[empIdx].position_id,
+        position_name: posObj.position_name || employees[empIdx].position_name,
+        job_rank: masterData['Bậc'] || masterData['Bậc lương'] || body.job_rank || employees[empIdx].job_rank,
+        job_level: masterData['Cấp'] || employees[empIdx].job_level || 'Cấp 3',
+        job_title: masterData['Chức danh'] || body.job_title || posObj.position_name || employees[empIdx].job_title,
+        work_location: masterData['Địa điểm làm việc'] || body.work_location || employees[empIdx].work_location,
+        work_area: masterData['Khu vực làm việc'] || body.work_area || employees[empIdx].work_area,
+        direct_manager_name: masterData['Quản lý trực tiếp'] !== undefined ? masterData['Quản lý trực tiếp'] : employees[empIdx].direct_manager_name,
+        indirect_manager_name: masterData['Quản lý gián tiếp'] !== undefined ? masterData['Quản lý gián tiếp'] : employees[empIdx].indirect_manager_name,
+        labor_nature: masterData['Tính chất lao động'] || body.labor_nature || employees[empIdx].labor_nature,
+        employment_status: masterData['Trạng thái lao động'] || body.employment_status || employees[empIdx].employment_status,
+        contract_type: masterData['Loại hợp đồng'] || body.contract_type || employees[empIdx].contract_type,
+        trial_start_date: masterData['Ngày thử việc'] !== undefined ? masterData['Ngày thử việc'] : employees[empIdx].trial_start_date,
+        official_date: masterData['Ngày chính thức'] !== undefined ? masterData['Ngày chính thức'] : employees[empIdx].official_date,
+        resignation_date: masterData['Ngày nghỉ việc'] !== undefined ? masterData['Ngày nghỉ việc'] : employees[empIdx].resignation_date,
+        resignation_reason: masterData['Lý do nghỉ'] !== undefined ? masterData['Lý do nghỉ'] : employees[empIdx].resignation_reason,
+        resignation_reason_group: masterData['Nhóm lý do nghỉ'] !== undefined ? masterData['Nhóm lý do nghỉ'] : employees[empIdx].resignation_reason_group,
+        seniority_text: masterData['Thâm niên'] !== undefined ? masterData['Thâm niên'] : employees[empIdx].seniority_text
     };
 
     // If ID changed, cascade update references in all related tables
     if (targetId !== id) {
-        // Cascade direct/indirect manager ID across all employees
         employees.forEach(e => {
             if (e.direct_manager_id === id) e.direct_manager_id = targetId;
             if (e.indirect_manager_id === id) e.indirect_manager_id = targetId;
         });
-
-        // Cascade in 11_System_Accounts
         if (Array.isArray(db.tables['11_System_Accounts'])) {
             db.tables['11_System_Accounts'].forEach(a => {
                 if (a.employee_id === id) a.employee_id = targetId;
             });
         }
-
-        // Cascade in 06_Emergency_Contacts
         if (Array.isArray(db.tables['06_Emergency_Contacts'])) {
             db.tables['06_Emergency_Contacts'].forEach(em => {
                 if (em.employee_id === id) em.employee_id = targetId;
             });
         }
-
-        // Cascade in 07_Education
         if (Array.isArray(db.tables['07_Education'])) {
             db.tables['07_Education'].forEach(ed => {
                 if (ed.employee_id === id) ed.employee_id = targetId;
             });
         }
-
-        // Cascade in 10_Contracts
         if (Array.isArray(db.tables['10_Contracts'])) {
             db.tables['10_Contracts'].forEach(ct => {
-                if (ct.employee_id === id) ct.employee_id = targetId;
+                if (ct.employee_id === id) {
+                    ct.employee_id = targetId;
+                    ct.contract_id = targetId;
+                }
             });
         }
     }
@@ -2185,13 +2191,19 @@ app.put('/api/employees/:id', (req, res) => {
     if (cIdx >= 0) {
         contacts[cIdx] = {
             ...contacts[cIdx],
-            full_name: body.full_name || contacts[cIdx].full_name,
-            mobile_phone: body.mobile_phone !== undefined ? body.mobile_phone : contacts[cIdx].mobile_phone,
-            work_email: body.work_email !== undefined ? body.work_email : contacts[cIdx].work_email,
-            personal_email: body.personal_email !== undefined ? body.personal_email : contacts[cIdx].personal_email,
-            permanent_address_full: body.permanent_address_full !== undefined ? body.permanent_address_full : contacts[cIdx].permanent_address_full,
-            current_address_full: body.current_address_full !== undefined ? body.current_address_full : contacts[cIdx].current_address_full,
-            employee_id: targetId
+            employee_id: targetId,
+            full_name: fullName,
+            mobile_phone: masterData['ĐT di động'] !== undefined ? masterData['ĐT di động'] : (body.mobile_phone !== undefined ? body.mobile_phone : contacts[cIdx].mobile_phone),
+            office_phone: masterData['ĐT cơ quan'] !== undefined ? masterData['ĐT cơ quan'] : contacts[cIdx].office_phone,
+            home_phone: masterData['ĐT nhà riêng'] !== undefined ? masterData['ĐT nhà riêng'] : (body.home_phone !== undefined ? body.home_phone : contacts[cIdx].home_phone),
+            other_phone: masterData['ĐT khác'] !== undefined ? masterData['ĐT khác'] : contacts[cIdx].other_phone,
+            work_email: masterData['Email cơ quan'] !== undefined ? masterData['Email cơ quan'] : (body.work_email !== undefined ? body.work_email : contacts[cIdx].work_email),
+            personal_email: masterData['Email cá nhân'] !== undefined ? masterData['Email cá nhân'] : (body.personal_email !== undefined ? body.personal_email : contacts[cIdx].personal_email),
+            other_email: masterData['Email khác'] !== undefined ? masterData['Email khác'] : contacts[cIdx].other_email,
+            skype: masterData['Skype'] !== undefined ? masterData['Skype'] : contacts[cIdx].skype,
+            facebook: masterData['Facebook'] !== undefined ? masterData['Facebook'] : contacts[cIdx].facebook,
+            permanent_address_full: masterData['Hộ khẩu thường trú'] !== undefined ? masterData['Hộ khẩu thường trú'] : (body.permanent_address_full !== undefined ? body.permanent_address_full : contacts[cIdx].permanent_address_full),
+            current_address_full: masterData['Chỗ ở hiện nay'] !== undefined ? masterData['Chỗ ở hiện nay'] : (body.current_address_full !== undefined ? body.current_address_full : contacts[cIdx].current_address_full)
         };
         db.tables['04_Contacts_Addresses'] = contacts;
     }
@@ -2202,12 +2214,17 @@ app.put('/api/employees/:id', (req, res) => {
     if (iIdx >= 0) {
         identity[iIdx] = {
             ...identity[iIdx],
-            full_name: body.full_name || identity[iIdx].full_name,
-            id_number: body.id_number !== undefined ? body.id_number : identity[iIdx].id_number,
-            id_issue_date: body.id_issue_date !== undefined ? body.id_issue_date : identity[iIdx].id_issue_date,
-            id_issue_place: body.id_issue_place !== undefined ? body.id_issue_place : identity[iIdx].id_issue_place,
-            passport_number: body.passport_number !== undefined ? body.passport_number : identity[iIdx].passport_number,
-            employee_id: targetId
+            employee_id: targetId,
+            full_name: fullName,
+            doc_type: masterData['Loại giấy tờ'] || body.doc_type || identity[iIdx].doc_type,
+            id_number: masterData['Số CMND'] !== undefined ? masterData['Số CMND'] : (body.id_number !== undefined ? body.id_number : identity[iIdx].id_number),
+            id_issue_date: masterData['Ngày cấp giấy tờ'] !== undefined ? masterData['Ngày cấp giấy tờ'] : (body.id_issue_date !== undefined ? body.id_issue_date : identity[iIdx].id_issue_date),
+            id_issue_place: masterData['Nơi cấp giấy tờ'] !== undefined ? masterData['Nơi cấp giấy tờ'] : (body.id_issue_place !== undefined ? body.id_issue_place : identity[iIdx].id_issue_place),
+            id_expiry_date: masterData['Ngày hết hạn giấy tờ'] !== undefined ? masterData['Ngày hết hạn giấy tờ'] : identity[iIdx].id_expiry_date,
+            passport_number: masterData['Số Hộ chiếu'] !== undefined ? masterData['Số Hộ chiếu'] : (body.passport_number !== undefined ? body.passport_number : identity[iIdx].passport_number),
+            passport_issue_date: masterData['Ngày cấp Hộ chiếu'] !== undefined ? masterData['Ngày cấp Hộ chiếu'] : identity[iIdx].passport_issue_date,
+            passport_issue_place: masterData['Nơi cấp Hộ chiếu'] !== undefined ? masterData['Nơi cấp Hộ chiếu'] : identity[iIdx].passport_issue_place,
+            passport_expiry_date: masterData['Ngày hết hạn Hộ chiếu'] !== undefined ? masterData['Ngày hết hạn Hộ chiếu'] : identity[iIdx].passport_expiry_date
         };
         db.tables['05_Identity_Docs'] = identity;
     }
@@ -2215,26 +2232,30 @@ app.put('/api/employees/:id', (req, res) => {
     // 4. Update emergency
     const emergency = db.tables['06_Emergency_Contacts'] || [];
     const emIdx = emergency.findIndex(em => em.employee_id === id || em.employee_id === targetId);
+    const emergName = masterData['Họ và tên (LHKC)'] || body.emergency_name || body.emergency_contact_name;
     if (emIdx >= 0) {
         emergency[emIdx] = {
             ...emergency[emIdx],
             employee_id: targetId,
-            full_name: body.full_name || emergency[emIdx].full_name,
-            contact_name: (body.emergency_name || body.emergency_contact_name) !== undefined ? (body.emergency_name || body.emergency_contact_name) : emergency[emIdx].contact_name,
-            relationship: (body.emergency_relation || body.emergency_contact_relation) !== undefined ? (body.emergency_relation || body.emergency_contact_relation) : emergency[emIdx].relationship,
-            mobile_phone: (body.emergency_phone || body.emergency_contact_phone) !== undefined ? (body.emergency_phone || body.emergency_contact_phone) : emergency[emIdx].mobile_phone,
-            address: body.permanent_address_full || emergency[emIdx].address
+            full_name: fullName,
+            contact_name: emergName !== undefined ? emergName : emergency[emIdx].contact_name,
+            relationship: masterData['Quan hệ (LHKC)'] !== undefined ? masterData['Quan hệ (LHKC)'] : (body.emergency_relation || emergency[emIdx].relationship),
+            mobile_phone: masterData['ĐT di động (LHKC)'] !== undefined ? masterData['ĐT di động (LHKC)'] : (body.emergency_phone || emergency[emIdx].mobile_phone),
+            home_phone: masterData['ĐT nhà riêng (LHKC)'] !== undefined ? masterData['ĐT nhà riêng (LHKC)'] : emergency[emIdx].home_phone,
+            email: masterData['Email (LHKC)'] !== undefined ? masterData['Email (LHKC)'] : emergency[emIdx].email,
+            address: masterData['Địa chỉ (LHKC)'] !== undefined ? masterData['Địa chỉ (LHKC)'] : emergency[emIdx].address
         };
         db.tables['06_Emergency_Contacts'] = emergency;
-    } else if (body.emergency_name || body.emergency_contact_name) {
+    } else if (emergName) {
         emergency.push({
             employee_id: targetId,
-            full_name: body.full_name || employees[empIdx].full_name,
-            contact_name: body.emergency_name || body.emergency_contact_name,
-            relationship: body.emergency_relation || body.emergency_contact_relation || 'Vợ',
-            mobile_phone: body.emergency_phone || body.emergency_contact_phone || '',
-            email: '',
-            address: body.permanent_address_full || ''
+            full_name: fullName,
+            contact_name: emergName,
+            relationship: masterData['Quan hệ (LHKC)'] || body.emergency_relation || 'Vợ',
+            mobile_phone: masterData['ĐT di động (LHKC)'] || body.emergency_phone || '',
+            home_phone: masterData['ĐT nhà riêng (LHKC)'] || '',
+            email: masterData['Email (LHKC)'] || '',
+            address: masterData['Địa chỉ (LHKC)'] || masterData['Hộ khẩu thường trú'] || ''
         });
         db.tables['06_Emergency_Contacts'] = emergency;
     }
@@ -2246,10 +2267,15 @@ app.put('/api/employees/:id', (req, res) => {
         education[eduIdx] = {
             ...education[eduIdx],
             employee_id: targetId,
-            full_name: body.full_name || education[eduIdx].full_name,
-            education_level: body.education_level !== undefined ? body.education_level : education[eduIdx].education_level,
-            major: body.major !== undefined ? body.major : education[eduIdx].major,
-            other_certificates: body.other_certificates !== undefined ? body.other_certificates : education[eduIdx].other_certificates
+            full_name: fullName,
+            cultural_level: masterData['Trình độ văn hóa'] !== undefined ? masterData['Trình độ văn hóa'] : education[eduIdx].cultural_level,
+            education_level: masterData['Trình độ đào tạo'] !== undefined ? masterData['Trình độ đào tạo'] : (body.education_level !== undefined ? body.education_level : education[eduIdx].education_level),
+            institution: masterData['Nơi đào tạo'] !== undefined ? masterData['Nơi đào tạo'] : education[eduIdx].institution,
+            faculty: masterData['Khoa'] !== undefined ? masterData['Khoa'] : education[eduIdx].faculty,
+            major: masterData['Chuyên ngành'] !== undefined ? masterData['Chuyên ngành'] : (body.major !== undefined ? body.major : education[eduIdx].major),
+            graduation_year: masterData['Năm tốt nghiệp'] !== undefined ? masterData['Năm tốt nghiệp'] : education[eduIdx].graduation_year,
+            classification: masterData['Xếp loại'] !== undefined ? masterData['Xếp loại'] : education[eduIdx].classification,
+            other_certificates: masterData['Bằng cấp chuyên môn khác'] !== undefined ? masterData['Bằng cấp chuyên môn khác'] : (body.other_certificates !== undefined ? body.other_certificates : education[eduIdx].other_certificates)
         };
         db.tables['07_Education'] = education;
     }
@@ -2258,17 +2284,20 @@ app.put('/api/employees/:id', (req, res) => {
     const salaries = db.tables['08_Salaries_Banks'] || [];
     const sIdx = salaries.findIndex(s => s.employee_id === id || s.employee_id === targetId);
     if (sIdx >= 0) {
-        const base = body.base_salary !== undefined ? parseFloat(body.base_salary) : salaries[sIdx].base_salary;
-        const total = body.total_salary !== undefined ? parseFloat(body.total_salary) : salaries[sIdx].total_salary;
+        const base = masterData['Lương cơ bản'] !== undefined ? parseFloat(masterData['Lương cơ bản']) : (body.base_salary !== undefined ? parseFloat(body.base_salary) : salaries[sIdx].base_salary);
+        const total = masterData['Tổng lương'] !== undefined ? parseFloat(masterData['Tổng lương']) : (body.total_salary !== undefined ? parseFloat(body.total_salary) : salaries[sIdx].total_salary);
         salaries[sIdx] = {
             ...salaries[sIdx],
-            full_name: body.full_name || salaries[sIdx].full_name,
+            employee_id: targetId,
+            full_name: fullName,
             base_salary: base,
             total_salary: total,
-            bank_account_number: body.bank_account_number !== undefined ? body.bank_account_number : salaries[sIdx].bank_account_number,
-            bank_name: body.bank_name !== undefined ? body.bank_name : salaries[sIdx].bank_name,
-            bank_branch: body.bank_branch !== undefined ? body.bank_branch : salaries[sIdx].bank_branch,
-            employee_id: targetId
+            insurance_salary: masterData['Lương đóng BH'] !== undefined ? parseFloat(masterData['Lương đóng BH']) : salaries[sIdx].insurance_salary,
+            salary_grade: masterData['Bậc lương'] !== undefined ? masterData['Bậc lương'] : salaries[sIdx].salary_grade,
+            salary_coefficient: masterData['Hệ số lương'] !== undefined ? parseFloat(masterData['Hệ số lương']) : salaries[sIdx].salary_coefficient,
+            bank_account_number: masterData['TK ngân hàng'] !== undefined ? masterData['TK ngân hàng'] : (body.bank_account_number !== undefined ? body.bank_account_number : salaries[sIdx].bank_account_number),
+            bank_name: masterData['Ngân hàng'] !== undefined ? masterData['Ngân hàng'] : (body.bank_name !== undefined ? body.bank_name : salaries[sIdx].bank_name),
+            bank_branch: masterData['Chi nhánh'] !== undefined ? masterData['Chi nhánh'] : (body.bank_branch !== undefined ? body.bank_branch : salaries[sIdx].bank_branch)
         };
         db.tables['08_Salaries_Banks'] = salaries;
     }
@@ -2279,11 +2308,13 @@ app.put('/api/employees/:id', (req, res) => {
     if (insIdx >= 0) {
         insurance[insIdx] = {
             ...insurance[insIdx],
-            full_name: body.full_name || insurance[insIdx].full_name,
-            social_insurance_book_no: body.social_insurance_book_no !== undefined ? body.social_insurance_book_no : insurance[insIdx].social_insurance_book_no,
-            social_insurance_code: body.social_insurance_code !== undefined ? body.social_insurance_code : insurance[insIdx].social_insurance_code,
-            hospital_registered: body.hospital_registered !== undefined ? body.hospital_registered : insurance[insIdx].hospital_registered,
-            employee_id: targetId
+            employee_id: targetId,
+            full_name: fullName,
+            has_insurance: masterData['Tham gia bảo hiểm'] !== undefined ? masterData['Tham gia bảo hiểm'] : insurance[insIdx].has_insurance,
+            social_insurance_book_no: masterData['Số sổ BHXH'] !== undefined ? masterData['Số sổ BHXH'] : (body.social_insurance_book_no !== undefined ? body.social_insurance_book_no : insurance[insIdx].social_insurance_book_no),
+            social_insurance_code: masterData['Mã số BHXH'] !== undefined ? masterData['Mã số BHXH'] : (body.social_insurance_code !== undefined ? body.social_insurance_code : insurance[insIdx].social_insurance_code),
+            hospital_registered: masterData['Nơi đăng ký KCB'] !== undefined ? masterData['Nơi đăng ký KCB'] : (body.hospital_registered !== undefined ? body.hospital_registered : insurance[insIdx].hospital_registered),
+            union_member: masterData['Tham gia công đoàn'] !== undefined ? masterData['Tham gia công đoàn'] : insurance[insIdx].union_member
         };
         db.tables['09_Insurance_Welfare'] = insurance;
     }
@@ -2295,62 +2326,39 @@ app.put('/api/employees/:id', (req, res) => {
         contracts[ctIdx] = {
             ...contracts[ctIdx],
             employee_id: targetId,
-            full_name: body.full_name || contracts[ctIdx].full_name,
-            contract_type: body.contract_type !== undefined ? body.contract_type : contracts[ctIdx].contract_type,
-            start_date: body.start_date !== undefined ? body.start_date : contracts[ctIdx].start_date,
-            end_date: body.end_date !== undefined ? body.end_date : contracts[ctIdx].end_date
+            contract_id: targetId,
+            full_name: fullName,
+            contract_type: masterData['Loại hợp đồng'] !== undefined ? masterData['Loại hợp đồng'] : (body.contract_type !== undefined ? body.contract_type : contracts[ctIdx].contract_type),
+            start_date: masterData['Ngày bắt đầu làm việc'] || masterData['Ngày thử việc'] || body.start_date || contracts[ctIdx].start_date,
+            end_date: masterData['Ngày hết hiệu lực'] || masterData['Ngày nghỉ việc'] || body.end_date || contracts[ctIdx].end_date,
+            trial_start_date: masterData['Ngày thử việc'] !== undefined ? masterData['Ngày thử việc'] : contracts[ctIdx].trial_start_date,
+            official_date: masterData['Ngày chính thức'] !== undefined ? masterData['Ngày chính thức'] : contracts[ctIdx].official_date
         };
         db.tables['10_Contracts'] = contracts;
     }
 
-    // 9. Update Master Profiles Sheet
-    if (db.tables['00_Master_Profiles']) {
-        const mIdx = db.tables['00_Master_Profiles'].findIndex(m => m['Mã nhân viên'] === id || m['Mã nhân viên'] === targetId);
-        if (mIdx >= 0) {
-            const row = db.tables['00_Master_Profiles'][mIdx];
-            row['Mã nhân viên'] = targetId;
-            if (body.full_name) row['Họ và tên'] = body.full_name;
-            if (body.start_date) row['Ngày bắt đầu làm việc'] = body.start_date;
-            if (body.end_date) row['Ngày kết thúc'] = body.end_date;
-            if (body.contract_type) row['Loại hợp đồng'] = body.contract_type;
-            if (deptObj.department_name) row['Phòng/Ban'] = deptObj.department_name;
-            if (body.job_rank) row['Cấp bậc'] = body.job_rank;
-            if (body.job_title || posObj.position_name) row['Chức danh'] = body.job_title || posObj.position_name;
-            if (body.mobile_phone) row['Điện thoại'] = body.mobile_phone;
-            if (body.work_email) row['Email'] = body.work_email;
-            if (body.work_location) row['Địa điểm làm việc'] = body.work_location;
-            if (body.date_of_birth) row['Ngày tháng năm sinh'] = body.date_of_birth;
-            if (body.gender) row['Giới tính'] = body.gender;
-            if (body.birth_place) row['Nơi sinh'] = body.birth_place;
-            if (body.marital_status) row['Tình trạng hôn nhân'] = body.marital_status;
-            if (body.children_count !== undefined) row['Số con'] = parseInt(body.children_count, 10);
-            if (body.native_place) row['Nguyên quán'] = body.native_place;
-            if (body.ethnicity) row['Dân tộc'] = body.ethnicity;
-            if (body.religion) row['Tôn giáo'] = body.religion;
-            if (body.id_number) row['Số CCCD/Hộ chiếu'] = body.id_number;
-            if (body.id_issue_date) row['Ngày cấp'] = body.id_issue_date;
-            if (body.id_issue_place) row['Nơi cấp'] = body.id_issue_place;
-            if (body.permanent_address_full) row['Địa chỉ thường trú'] = body.permanent_address_full;
-            if (body.current_address_full) row['Địa chỉ tạm trú'] = body.current_address_full;
-            if (body.social_insurance_book_no) row['Số sổ BHXH'] = body.social_insurance_book_no;
-            if (body.hospital_registered) row['Nơi đăng ký khám, chữa bệnh ban đầu'] = body.hospital_registered;
-            if (body.tax_code) row['Mã số thuế cá nhân'] = body.tax_code;
-            if (body.bank_account_number) row['Số tài khoản'] = body.bank_account_number;
-            if (body.bank_name) row['Tên ngân hàng'] = body.bank_name;
-            if (body.bank_branch) row['Tên chi nhánh/Phòng Giao dịch'] = body.bank_branch;
-            if (body.education_level) row['Trình độ học vấn'] = body.education_level;
-            if (body.major) row['Trình độ chuyên môn: Chuyên ngành học'] = body.major;
-            if (body.other_certificates) row['Bằng cấp chuyên môn khác'] = body.other_certificates;
-            if (body.emergency_name || body.emergency_contact_name) {
-                row['Liên lạc khẩn cấp (họ tên, mối quan hệ, số điện thoại)'] = `${body.emergency_name || body.emergency_contact_name} (${body.emergency_relation || 'Người thân'}) - ${body.emergency_phone || ''}`;
-            }
-        }
+    // 9. Update Master Profiles Sheet (All 115 columns preserved)
+    if (!db.tables['00_Master_Profiles']) {
+        db.tables['00_Master_Profiles'] = [];
+    }
+    const mIdx = db.tables['00_Master_Profiles'].findIndex(m => m['Mã nhân viên'] === id || m['Mã nhân viên'] === targetId);
+    if (mIdx >= 0) {
+        db.tables['00_Master_Profiles'][mIdx] = {
+            ...db.tables['00_Master_Profiles'][mIdx],
+            ...masterData,
+            'Mã nhân viên': targetId
+        };
+    } else {
+        db.tables['00_Master_Profiles'].unshift({
+            ...masterData,
+            'Mã nhân viên': targetId
+        });
     }
 
     recordLog(db, {
         action_type: 'UPDATE',
         module: 'Nhân sự',
-        description: `Cập nhật hồ sơ nhân sự ${targetId !== id ? `${id} -> ${targetId}` : id} - ${employees[empIdx].full_name}`,
+        description: `Cập nhật hồ sơ nhân sự ${targetId !== id ? `${id} -> ${targetId}` : id} - ${fullName}`,
         user_id: body.operator_id || 'TH-1948',
         user_name: body.operator_name || 'Huỳnh Thanh Long',
         user_role: body.operator_role || 'ADMIN',
@@ -3896,6 +3904,14 @@ app.delete('/api/accounts/:id', (req, res) => {
     const target = accounts.find(a => a.account_id === id || a.employee_id === id);
     if (!target) {
         return res.status(404).json({ success: false, message: 'Không tìm thấy tài khoản' });
+    }
+
+    // Safety: Protect the only admin account from accidental deletion
+    if (target.role === 'ADMIN') {
+        const adminCount = accounts.filter(a => a.role === 'ADMIN').length;
+        if (adminCount <= 1) {
+            return res.status(400).json({ success: false, message: 'Không thể xóa tài khoản Quản trị viên (Admin) duy nhất của hệ thống' });
+        }
     }
 
     accounts = accounts.filter(a => a.account_id !== id && a.employee_id !== id);

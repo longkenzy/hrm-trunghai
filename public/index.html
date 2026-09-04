@@ -602,9 +602,31 @@
         <div class="card">
           <div class="card-body">
             <!-- Controls Filter Bar -->
-            <div class="table-controls">
-              <div class="search-filter-group">
-                <input type="text" id="contract-search-input" class="form-control" placeholder="Tìm theo mã HĐ, tên NV, mã NV, loại HĐ..." style="width: 320px;">
+            <div class="table-controls" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
+              <div class="search-filter-group" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <input type="text" id="contract-search-input" class="form-control" placeholder="Tìm theo mã HĐ, mã NV, họ tên, loại HĐ..." style="width: 320px;">
+                <select id="contract-filter-type" class="filter-select" style="height: 38px; border-radius: 6px; border: 1px solid var(--border-color); padding: 0 12px; font-size: 13px;">
+                  <option value="">-- Tất cả loại hợp đồng --</option>
+                  <option value="không xác định">Hợp đồng không xác định thời hạn</option>
+                  <option value="xác định">Hợp đồng xác định thời hạn</option>
+                  <option value="thử việc">Hợp đồng thử việc</option>
+                  <option value="học việc">Hợp đồng học việc</option>
+                </select>
+                <select id="contract-filter-status" class="filter-select" style="height: 38px; border-radius: 6px; border: 1px solid var(--border-color); padding: 0 12px; font-size: 13px;">
+                  <option value="">-- Tất cả trạng thái --</option>
+                  <option value="HIỆU LỰC">Hiệu lực</option>
+                  <option value="HẾT HẠN">Hết hạn</option>
+                </select>
+              </div>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <span style="font-size: 12.5px; color: var(--text-secondary);">Hiển thị:</span>
+                <select id="contract-page-size" class="filter-select" style="height: 34px; padding: 0 8px; font-size: 12.5px;">
+                  <option value="25" selected>25 dòng/trang</option>
+                  <option value="50">50 dòng/trang</option>
+                  <option value="100">100 dòng/trang</option>
+                  <option value="200">200 dòng/trang</option>
+                  <option value="999999">Tất cả</option>
+                </select>
               </div>
             </div>
 
@@ -613,7 +635,7 @@
                 <thead>
                   <tr>
                     <th>Mã Hợp Đồng</th>
-                    <th>Mã NV</th>
+                    <th>Mã Nhân Viên</th>
                     <th>Họ và Tên</th>
                     <th>Loại Hợp Đồng</th>
                     <th>Ngày Thử Việc</th>
@@ -625,6 +647,12 @@
                   <!-- Dynamic -->
                 </tbody>
               </table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="pagination-wrapper" id="contracts-pagination" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--border-color); background: #FFFFFF; font-size: 13px;">
+              <div id="contracts-pagination-info" style="color: var(--text-secondary);"></div>
+              <div id="contracts-pagination-controls" style="display: flex; gap: 4px;"></div>
             </div>
           </div>
         </div>
@@ -737,6 +765,7 @@
                     <option value="25" selected>25 người / trang</option>
                     <option value="50">50 người / trang</option>
                     <option value="100">100 người / trang</option>
+                    <option value="200">200 người / trang</option>
                   </select>
                 </div>
               </div>
@@ -916,9 +945,10 @@
                 <div style="display: flex; align-items: center; gap: 6px;">
                   <label for="report-page-size" style="font-size: 12px; color: var(--text-secondary); margin: 0; white-space: nowrap;">Hiển thị:</label>
                   <select id="report-page-size" class="filter-select" style="height: 28px; padding: 2px 8px; font-size: 12px; width: auto; cursor: pointer;">
-                    <option value="20" selected>20 người / trang</option>
+                    <option value="25" selected>25 người / trang</option>
                     <option value="50">50 người / trang</option>
                     <option value="100">100 người / trang</option>
+                    <option value="200">200 người / trang</option>
                   </select>
                 </div>
               </div>
@@ -1181,9 +1211,10 @@
                 <div style="display: flex; align-items: center; gap: 6px;">
                   <label for="trash-page-size" style="font-size: 12px; color: var(--text-secondary); margin: 0; white-space: nowrap;">Hiển thị:</label>
                   <select id="trash-page-size" class="filter-select" style="height: 28px; padding: 2px 8px; font-size: 12px; border-radius: var(--radius-sm); width: auto; cursor: pointer;">
-                    <option value="25">25 dòng</option>
-                    <option value="50">50 dòng</option>
-                    <option value="100">100 dòng</option>
+                    <option value="25" selected>25 dòng / trang</option>
+                    <option value="50">50 dòng / trang</option>
+                    <option value="100">100 dòng / trang</option>
+                    <option value="200">200 dòng / trang</option>
                   </select>
                 </div>
               </div>
@@ -1201,493 +1232,68 @@
 </div>
 
 <!-- ==========================================================================
-     MODAL 1: EMPLOYEE DETAIL DRAWER (8 Detailed Tabs)
+     MODAL 1: EMPLOYEE DETAIL DRAWER (115 Fields)
      ========================================================================== -->
 <div class="modal-backdrop" id="modal-employee-detail">
-  <div class="modal-container">
+  <div class="modal-container" style="max-width: 1040px; max-height: 90vh; display: flex; flex-direction: column;">
     <div class="modal-header">
       <div class="modal-title">
         <i class="fa-solid fa-id-card"></i>
-        <span id="detail-modal-emp-name">Chi Tiết Hồ Sơ Nhân Viên</span>
+        <span id="detail-modal-emp-name">Chi Tiết Hồ Sơ Nhân Viên (115 Trường Dữ Liệu)</span>
       </div>
       <button class="modal-close" onclick="appEmployees.closeDetailModal()">&times;</button>
     </div>
 
-    <!-- 8 Tabs Navigation -->
-    <div class="modal-tabs">
-      <button class="modal-tab-btn active" data-tab="tab-general">1. Hành Chính & Quản Lý</button>
-      <button class="modal-tab-btn" data-tab="tab-contact">2. Liên Hệ & Cư Trú</button>
-      <button class="modal-tab-btn" data-tab="tab-identity">3. Giấy Tờ & CCCD</button>
-      <button class="modal-tab-btn" data-tab="tab-emergency">4. Thân Nhân Khẩn Cấp</button>
-      <button class="modal-tab-btn" data-tab="tab-education">5. Học Vấn & Đào Tạo</button>
-      <button class="modal-tab-btn" data-tab="tab-salary">6. Lương & Ngân Hàng</button>
-      <button class="modal-tab-btn" data-tab="tab-insurance">7. Bảo Hiểm & Công Đoàn</button>
-      <button class="modal-tab-btn" data-tab="tab-contract">8. Hợp Đồng & Tài Khoản</button>
+    <!-- 9 Tabs Navigation for 115 Fields -->
+    <div class="modal-tabs" id="detail-modal-tab-container" style="overflow-x: auto; white-space: nowrap; display: flex; border-bottom: 1px solid var(--border-color); background: #F8FAFC;">
+      <!-- Populated dynamically via profile-fields.js -->
     </div>
 
-    <div class="modal-body" id="detail-modal-body">
-      <!-- Tab 1: General Info -->
-      <div class="tab-pane active" id="tab-general">
-        <div class="info-grid">
-          <div class="info-item"><span class="info-label">Mã Nhân Viên</span><span class="info-value" id="det-emp-id">-</span></div>
-          <div class="info-item"><span class="info-label">Mã Chấm Công</span><span class="info-value" id="det-time-code">-</span></div>
-          <div class="info-item"><span class="info-label">Họ và Tên</span><span class="info-value" id="det-full-name">-</span></div>
-          <div class="info-item"><span class="info-label">Giới Tính</span><span class="info-value" id="det-gender">-</span></div>
-          <div class="info-item"><span class="info-label">Ngày Sinh</span><span class="info-value" id="det-dob">-</span></div>
-          <div class="info-item"><span class="info-label">Nơi Sinh</span><span class="info-value" id="det-birth-place">-</span></div>
-          <div class="info-item"><span class="info-label">Nguyên Quán</span><span class="info-value" id="det-native-place">-</span></div>
-          <div class="info-item"><span class="info-label">Dân Tộc / Tôn Giáo</span><span class="info-value" id="det-ethnicity-rel">-</span></div>
-          <div class="info-item"><span class="info-label">Hôn Nhân & Con Cái</span><span class="info-value" id="det-marital-children">-</span></div>
-          <div class="info-item"><span class="info-label">Thuộc Công Ty</span><span class="info-value" id="det-company-name">-</span></div>
-          <div class="info-item"><span class="info-label">Đơn Vị Công Tác</span><span class="info-value" id="det-dept-name">-</span></div>
-          <div class="info-item"><span class="info-label">Vị Trí Công Việc</span><span class="info-value" id="det-pos-name">-</span></div>
-          <div class="info-item"><span class="info-label">Cấp Bậc Nhân Sự</span><span class="info-value" id="det-job-rank" style="color: var(--primary-navy); font-weight: 600;">-</span></div>
-          <div class="info-item"><span class="info-label">Chức Danh Chuyên Môn</span><span class="info-value" id="det-job-title">-</span></div>
-          <div class="info-item"><span class="info-label">Địa Điểm Làm Việc</span><span class="info-value" id="det-work-loc">-</span></div>
-          <div class="info-item"><span class="info-label">Quản Lý Trực Tiếp</span><span class="info-value" id="det-direct-mgr">-</span></div>
-          <div class="info-item"><span class="info-label">Quản Lý Gián Tiếp</span><span class="info-value" id="det-indirect-mgr">-</span></div>
-          <div class="info-item"><span class="info-label">Tính Chất Lao Động</span><span class="info-value" id="det-labor-nature">-</span></div>
-          <div class="info-item"><span class="info-label">Trạng Thái Làm Việc</span><span class="info-value" id="det-emp-status">-</span></div>
-          <div class="info-item"><span class="info-label">Ngày Bắt Đầu Làm Việc</span><span class="info-value" id="det-start-date">-</span></div>
-          <div class="info-item"><span class="info-label">Ngày Kết Thúc (HĐ/Nghỉ)</span><span class="info-value" id="det-end-date">-</span></div>
-          <div class="info-item"><span class="info-label">Ngày Thử Việc / Chính Thức</span><span class="info-value" id="det-official-date">-</span></div>
-          <div class="info-item"><span class="info-label">Thâm Niên Công Tác</span><span class="info-value" id="det-seniority">-</span></div>
-          <div class="info-item" style="grid-column: 1 / -1;"><span class="info-label">Bằng Cấp Chuyên Môn Khác & Chứng Chỉ</span><span class="info-value" id="det-other-certs" style="color: #059669; font-weight: 500;">-</span></div>
-        </div>
-      </div>
-
-      <!-- Tab 2: Contact Info -->
-      <div class="tab-pane" id="tab-contact">
-        <div class="info-grid">
-          <div class="info-item"><span class="info-label">ĐT Di Động</span><span class="info-value" id="det-mobile">-</span></div>
-          <div class="info-item"><span class="info-label">ĐT Nhà Riêng</span><span class="info-value" id="det-home-phone">-</span></div>
-          <div class="info-item"><span class="info-label">Email Công Việc</span><span class="info-value" id="det-work-email">-</span></div>
-          <div class="info-item"><span class="info-label">Email Cá Nhân</span><span class="info-value" id="det-personal-email">-</span></div>
-          <div class="info-item" style="grid-column: 1 / -1;"><span class="info-label">Hộ Khẩu Thường Trú</span><span class="info-value" id="det-perm-addr">-</span></div>
-          <div class="info-item" style="grid-column: 1 / -1;"><span class="info-label">Chỗ Ở Hiện Nay</span><span class="info-value" id="det-curr-addr">-</span></div>
-        </div>
-      </div>
-
-      <!-- Tab 3: Identity Docs -->
-      <div class="tab-pane" id="tab-identity">
-        <div class="info-grid">
-          <div class="info-item"><span class="info-label">Loại Giấy Tờ</span><span class="info-value" id="det-id-type">CCCD</span></div>
-          <div class="info-item"><span class="info-label">Số CMND / CCCD (12 số)</span><span class="info-value" id="det-id-num">-</span></div>
-          <div class="info-item"><span class="info-label">Ngày Cấp</span><span class="info-value" id="det-id-date">-</span></div>
-          <div class="info-item"><span class="info-label">Nơi Cấp</span><span class="info-value" id="det-id-place">-</span></div>
-          <div class="info-item"><span class="info-label">Ngày Hết Hạn CCCD</span><span class="info-value" id="det-id-exp">-</span></div>
-          <div class="info-item"><span class="info-label">Mã Số Thuế Cá Nhân</span><span class="info-value" id="det-tax-code">-</span></div>
-          <div class="info-item"><span class="info-label">Số Hộ Chiếu</span><span class="info-value" id="det-passport-num">-</span></div>
-          <div class="info-item"><span class="info-label">Ngày Cấp Hộ Chiếu</span><span class="info-value" id="det-passport-date">-</span></div>
-        </div>
-      </div>
-
-      <!-- Tab 4: Emergency Contact -->
-      <div class="tab-pane" id="tab-emergency">
-        <div class="info-grid" id="det-emergency-container">
-          <!-- Injected via JS -->
-        </div>
-      </div>
-
-      <!-- Tab 5: Education -->
-      <div class="tab-pane" id="tab-education">
-        <div class="info-grid" id="det-education-container">
-          <!-- Injected via JS -->
-        </div>
-      </div>
-
-      <!-- Tab 6: Salary & Bank -->
-      <div class="tab-pane" id="tab-salary">
-        <div class="info-grid">
-          <div class="info-item"><span class="info-label">Bậc Lương</span><span class="info-value" id="det-salary-grade">-</span></div>
-          <div class="info-item"><span class="info-label">Lương Cơ Bản</span><span class="info-value" id="det-base-salary" style="color: #059669;">-</span></div>
-          <div class="info-item"><span class="info-label">Tổng Lương</span><span class="info-value" id="det-total-salary">-</span></div>
-          <div class="info-item"><span class="info-label">Lương Đóng Bảo Hiểm</span><span class="info-value" id="det-ins-salary">-</span></div>
-          <div class="info-item"><span class="info-label">Số Tài Khoản Ngân Hàng</span><span class="info-value" id="det-bank-acc">-</span></div>
-          <div class="info-item"><span class="info-label">Ngân Hàng Mở Thẻ</span><span class="info-value" id="det-bank-name">-</span></div>
-          <div class="info-item"><span class="info-label">Chi Nhánh Ngân Hàng</span><span class="info-value" id="det-bank-branch">-</span></div>
-        </div>
-      </div>
-
-      <!-- Tab 7: Insurance & Welfare -->
-      <div class="tab-pane" id="tab-insurance">
-        <div class="info-grid">
-          <div class="info-item"><span class="info-label">Tham Gia Bảo Hiểm</span><span class="info-value" id="det-has-ins">-</span></div>
-          <div class="info-item"><span class="info-label">Mã Số BHXH</span><span class="info-value" id="det-bhxh-code">-</span></div>
-          <div class="info-item"><span class="info-label">Số Sổ BHXH</span><span class="info-value" id="det-bhxh-book">-</span></div>
-          <div class="info-item"><span class="info-label">Ngày Bắt Đầu Đóng BH</span><span class="info-value" id="det-ins-date">-</span></div>
-          <div class="info-item"><span class="info-label">Tỷ Lệ Đóng (BHXH 8%, BHYT 1.5%, BHTN 1%)</span><span class="info-value" id="det-ins-rate">10.5%</span></div>
-          <div class="info-item" style="grid-column: 1 / -1;"><span class="info-label">Nơi Đăng Ký Khám Chữa Bệnh Ban Đầu</span><span class="info-value" id="det-hospital">-</span></div>
-          <div class="info-item"><span class="info-label">Đoàn Viên Công Đoàn</span><span class="info-value" id="det-union">-</span></div>
-        </div>
-      </div>
-
-      <!-- Tab 8: Contract & Account -->
-      <div class="tab-pane" id="tab-contract">
-        <div class="info-grid">
-          <div class="info-item"><span class="info-label">Mã Hợp Đồng</span><span class="info-value" id="det-contract-id">-</span></div>
-          <div class="info-item"><span class="info-label">Loại Hợp Đồng</span><span class="info-value" id="det-contract-type">-</span></div>
-          <div class="info-item"><span class="info-label">Trạng Thái Hợp Đồng</span><span class="info-value" id="det-contract-status">-</span></div>
-          <div class="info-item"><span class="info-label">Email Đăng Nhập WebApp</span><span class="info-value" id="det-acc-email">-</span></div>
-          <div class="info-item"><span class="info-label">Phân Quyền Hệ Thống</span><span class="info-value" id="det-acc-role">-</span></div>
-          <div class="info-item"><span class="info-label">Trạng Thái Tài Khoản</span><span class="info-value" id="det-acc-status">-</span></div>
-        </div>
-      </div>
+    <div class="modal-body" id="detail-modal-panes-container" style="overflow-y: auto; padding: 18px 24px; flex: 1;">
+      <!-- Populated dynamically via profile-fields.js -->
     </div>
 
-    <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="window.print()"><i class="fa-solid fa-print"></i> In Hồ Sơ</button>
-      <button class="btn btn-primary" id="btn-edit-from-detail"><i class="fa-solid fa-pen-to-square"></i> Chỉnh Sửa</button>
-      <button class="btn btn-secondary" onclick="appEmployees.closeDetailModal()">Đóng</button>
+    <div class="modal-footer" style="padding: 10px 20px; background: #F8FAFC; border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+      <div style="font-size: 11.5px; color: var(--text-muted);">
+        <i class="fa-solid fa-layer-group"></i> Hiển thị đầy đủ 115 trường thông tin chuẩn theo cơ sở dữ liệu Master Profile.
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button class="btn btn-secondary" onclick="window.print()"><i class="fa-solid fa-print"></i> In Hồ Sơ</button>
+        <button class="btn btn-primary" id="btn-edit-from-detail" style="background: var(--primary-navy);"><i class="fa-solid fa-pen-to-square"></i> Chỉnh Sửa</button>
+        <button class="btn btn-secondary" onclick="appEmployees.closeDetailModal()">Đóng</button>
+      </div>
     </div>
   </div>
 </div>
 
 <!-- ==========================================================================
-     MODAL 2: ADD / EDIT EMPLOYEE FORM (FULL 34 FIELDS)
+     MODAL 2: ADD / EDIT EMPLOYEE FORM (FULL 115 MASTER PROFILE FIELDS)
      ========================================================================== -->
 <div class="modal-backdrop" id="modal-employee-form">
-  <div class="modal-container" style="max-width: 920px; max-height: 90vh; display: flex; flex-direction: column;">
+  <div class="modal-container" style="max-width: 1040px; max-height: 90vh; display: flex; flex-direction: column;">
     <div class="modal-header">
       <div class="modal-title">
         <i class="fa-solid fa-user-pen" id="form-modal-icon"></i>
-        <span id="form-modal-title">Chỉnh Sửa Hồ Sơ Nhân Viên</span>
+        <span id="form-modal-title">Hồ Sơ Nhân Viên (115 Trường Dữ Liệu)</span>
       </div>
       <button class="modal-close" onclick="appEmployees.closeFormModal()">&times;</button>
     </div>
 
-    <!-- 4 Navigation Tabs for Form -->
-    <div class="modal-tabs" style="border-bottom: 1px solid var(--border-color); background: #F8FAFC;">
-      <button type="button" class="modal-tab-btn form-tab-btn active" data-tab="form-tab-personal"><i class="fa-solid fa-user"></i> 1. Cá Nhân & Thân Nhân</button>
-      <button type="button" class="modal-tab-btn form-tab-btn" data-tab="form-tab-job"><i class="fa-solid fa-briefcase"></i> 2. Vị Trí, Cấp Bậc & HĐ</button>
-      <button type="button" class="modal-tab-btn form-tab-btn" data-tab="form-tab-contact"><i class="fa-solid fa-address-book"></i> 3. Cư Trú, CCCD & Khẩn Cấp</button>
-      <button type="button" class="modal-tab-btn form-tab-btn" data-tab="form-tab-salary-edu"><i class="fa-solid fa-wallet"></i> 4. Lương, BHXH & Học Vấn</button>
+    <!-- 9 Navigation Tabs for Form -->
+    <div class="modal-tabs" id="form-modal-tab-container" style="overflow-x: auto; white-space: nowrap; display: flex; border-bottom: 1px solid var(--border-color); background: #F8FAFC;">
+      <!-- Populated dynamically via profile-fields.js -->
     </div>
 
-    <form id="employee-crud-form" style="display: flex; flex-direction: column; flex: 1; overflow: hidden;">
+    <form id="employee-crud-form" style="display: flex; flex-direction: column; flex: 1; overflow: hidden;" onsubmit="appEmployees.handleFormSubmit(event)">
       <input type="hidden" id="form-is-edit" value="0">
       <input type="hidden" id="form-old-emp-id" value="">
-      
-      <div class="modal-body" style="overflow-y: auto; padding: 18px 24px; flex: 1;">
-        
-        <!-- TAB 1: CÁ NHÂN & THÂN NHÂN -->
-        <div class="form-tab-pane active" id="form-tab-personal">
-          <div class="form-grid">
-            <div class="form-group">
-              <label>Mã Nhân Viên <span class="req">*</span></label>
-              <input type="text" id="form-emp-id" class="form-control" placeholder="Tự động sinh (TH-xxxx)" required>
-            </div>
-
-            <div class="form-group">
-              <label>Họ và Tên Đầy Đủ <span class="req">*</span></label>
-              <input type="text" id="form-full-name" class="form-control" placeholder="Nguyễn Văn A" required>
-            </div>
-
-            <div class="form-group">
-              <label>Giới Tính</label>
-              <select id="form-gender" class="form-control">
-                <option value="Nam">Nam</option>
-                <option value="Nữ">Nữ</option>
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label>Ngày Tháng Năm Sinh</label>
-              <input type="date" id="form-dob" class="form-control">
-            </div>
-
-            <div class="form-group">
-              <label>Nơi Sinh (Tỉnh/Thành phố)</label>
-              <input type="text" id="form-birth-place" class="form-control" placeholder="Hà Nội, TP.HCM, Phú Yên...">
-            </div>
-
-            <div class="form-group">
-              <label>Nguyên Quán</label>
-              <input type="text" id="form-native-place" class="form-control" placeholder="Hà Nội, Nghệ An, Quảng Nam...">
-            </div>
-
-            <div class="form-group">
-              <label>Dân Tộc</label>
-              <input type="text" id="form-ethnicity" class="form-control" value="Kinh">
-            </div>
-
-            <div class="form-group">
-              <label>Tôn Giáo</label>
-              <input type="text" id="form-religion" class="form-control" value="Không">
-            </div>
-
-            <div class="form-group">
-              <label>Tình Trạng Hôn Nhân</label>
-              <select id="form-marital-status" class="form-control">
-                <option value="Độc thân">Độc thân</option>
-                <option value="Đã có gia đình">Đã có gia đình</option>
-                <option value="Ly hôn">Ly hôn</option>
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label>Số Con</label>
-              <input type="number" id="form-children-count" class="form-control" min="0" max="10" value="0">
-            </div>
-
-            <div class="form-group">
-              <label>Mã Số Thuế Cá Nhân</label>
-              <input type="text" id="form-tax-code" class="form-control" placeholder="8xxxxxxxxxx">
-            </div>
-          </div>
-        </div>
-
-        <!-- TAB 2: VỊ TRÍ, CẤP BẬC & HỢP ĐỒNG -->
-        <div class="form-tab-pane" id="form-tab-job" style="display: none;">
-          <div class="form-grid">
-            <div class="form-group">
-              <label>Thuộc Công Ty Nào <span class="req">*</span></label>
-              <select id="form-company-id" class="form-control" required>
-                <!-- Dynamic from appData.companies -->
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label>Phòng Ban Nào <span class="req">*</span></label>
-              <select id="form-dept-id" class="form-control" required>
-                <!-- Dynamic from appData.departments filtered by company -->
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label>Vị Trí / Chức Vụ Gì <span class="req">*</span></label>
-              <select id="form-pos-id" class="form-control" required>
-                <!-- Dynamic from appData.positions filtered by department -->
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label>Cấp Bậc Nhân Sự</label>
-              <select id="form-job-rank" class="form-control">
-                <option value="Cấp 1 - Học việc / Thực tập sinh">Cấp 1 - Học việc / Thực tập sinh</option>
-                <option value="Cấp 2 - Nhân viên Kỹ thuật / Lao động">Cấp 2 - Nhân viên Kỹ thuật / Lao động</option>
-                <option value="Cấp 3 - Chuyên viên / Nhân viên Nghiệp vụ">Cấp 3 - Chuyên viên / Nhân viên Nghiệp vụ</option>
-                <option value="Cấp 4 - Đội trưởng / Thợ Máy Chính / Lái máy">Cấp 4 - Đội trưởng / Thợ Máy Chính / Lái máy</option>
-                <option value="Cấp 5 - Kỹ sư Chính / Chuyên viên Quản lý Nghiệp vụ">Cấp 5 - Kỹ sư Chính / Chuyên viên Quản lý Nghiệp vụ</option>
-                <option value="Cấp 7 - Phó ban / Phó Giám đốc BĐH / Chỉ huy phó">Cấp 7 - Phó ban / Phó Giám đốc BĐH / Chỉ huy phó</option>
-                <option value="Cấp 8 - Trưởng ban / Giám đốc Ban Điều hành Dự án / Chỉ huy trưởng">Cấp 8 - Trưởng ban / Giám đốc Ban Điều hành Dự án / Chỉ huy trưởng</option>
-                <option value="Cấp 9 - Ban Tổng Giám đốc Điều hành">Cấp 9 - Ban Tổng Giám đốc Điều hành</option>
-                <option value="Cấp 10 - Ban Lãnh đạo Cấp cao (Chủ tịch / Phó Chủ tịch)">Cấp 10 - Ban Lãnh đạo Cấp cao (Chủ tịch / Phó Chủ tịch)</option>
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label>Chức Danh Chuyên Môn</label>
-              <input type="text" id="form-job-title" class="form-control" placeholder="Kỹ sư hiện trường, Kế toán trưởng...">
-            </div>
-
-            <div class="form-group" style="grid-column: 1 / -1;">
-              <label>Địa Điểm Làm Việc</label>
-              <input type="text" id="form-work-location" class="form-control" placeholder="Trụ sở Tổng công ty / Dự án Phú Minh / Dự án Trung Nam...">
-            </div>
-
-            <div class="form-group">
-              <label>Quản Lý Trực Tiếp</label>
-              <select id="form-direct-mgr" class="form-control"></select>
-            </div>
-
-            <div class="form-group">
-              <label>Tính Chất Lao Động</label>
-              <select id="form-labor-nature" class="form-control">
-                <option value="Chính thức">Chính thức</option>
-                <option value="Thử việc">Thử việc</option>
-                <option value="Học việc">Học việc</option>
-                <option value="Thời vụ">Thời vụ</option>
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label>Trạng Thái Làm Việc</label>
-              <select id="form-emp-status" class="form-control">
-                <option value="Đang làm việc">Đang làm việc</option>
-                <option value="Thử việc">Thử việc</option>
-                <option value="Tạm hoãn HĐ">Tạm hoãn HĐ</option>
-                <option value="Đã nghỉ việc">Đã nghỉ việc</option>
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label>Loại Hợp Đồng Lao Động</label>
-              <select id="form-contract-type" class="form-control">
-                <option value="Hợp đồng lao động không xác định thời hạn">Hợp đồng lao động không xác định thời hạn</option>
-                <option value="Hợp đồng lao động xác định thời hạn (36 tháng)">Hợp đồng lao động xác định thời hạn (36 tháng)</option>
-                <option value="Hợp đồng lao động xác định thời hạn (12 tháng)">Hợp đồng lao động xác định thời hạn (12 tháng)</option>
-                <option value="Hợp đồng thử việc">Hợp đồng thử việc</option>
-                <option value="Hợp đồng lao động thời vụ">Hợp đồng lao động thời vụ</option>
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label>Ngày Bắt Đầu Làm Việc</label>
-              <input type="date" id="form-start-date" class="form-control">
-            </div>
-
-            <div class="form-group">
-              <label>Ngày Kết Thúc (HĐ / Nghỉ việc)</label>
-              <input type="text" id="form-end-date" class="form-control" placeholder="YYYY-MM-DD hoặc Không xác định">
-            </div>
-          </div>
-        </div>
-
-        <!-- TAB 3: CƯ TRÚ, CCCD & KHẨN CẤP -->
-        <div class="form-tab-pane" id="form-tab-contact" style="display: none;">
-          <div class="form-grid">
-            <div class="form-group">
-              <label>Số ĐT Di Động <span class="req">*</span></label>
-              <input type="text" id="form-mobile" class="form-control" placeholder="098xxxxxxx" required>
-            </div>
-
-            <div class="form-group">
-              <label>Email Công Việc (@trunghaico.vn)</label>
-              <input type="email" id="form-email" class="form-control" placeholder="ten@trunghaico.vn">
-            </div>
-
-            <div class="form-group">
-              <label>Email Cá Nhân</label>
-              <input type="email" id="form-personal-email" class="form-control" placeholder="email@gmail.com">
-            </div>
-
-            <div class="form-group" style="grid-column: 1 / -1;">
-              <label>Hộ Khẩu Thường Trú (Địa chỉ đầy đủ 4 cấp)</label>
-              <input type="text" id="form-perm-address" class="form-control" placeholder="Số nhà, Đường, Phường/Xã, Quận/Huyện, Tỉnh/TP">
-            </div>
-
-            <div class="form-group" style="grid-column: 1 / -1;">
-              <label>Địa Chỉ Tạm Trú / Chỗ Ở Hiện Nay</label>
-              <input type="text" id="form-curr-address" class="form-control" placeholder="Số nhà, Đường, Phường/Xã, Quận/Huyện, Tỉnh/TP">
-            </div>
-
-            <div class="form-group">
-              <label>Số CCCD (12 Chữ Số)</label>
-              <input type="text" id="form-id-num" class="form-control" placeholder="00109xxxxxxxx">
-            </div>
-
-            <div class="form-group">
-              <label>Ngày Cấp CCCD</label>
-              <input type="date" id="form-id-date" class="form-control">
-            </div>
-
-            <div class="form-group">
-              <label>Nơi Cấp CCCD</label>
-              <input type="text" id="form-id-place" class="form-control" value="Cục Cảnh sát Quản lý hành chính về trật tự xã hội">
-            </div>
-
-            <div class="form-group">
-              <label>Số Hộ Chiếu (Passport)</label>
-              <input type="text" id="form-passport-num" class="form-control" placeholder="P0123456">
-            </div>
-
-            <div class="form-group" style="grid-column: 1 / -1; margin-top: 10px; border-top: 1px dashed var(--border-color); padding-top: 10px;">
-              <strong style="font-size: 13px; color: var(--accent-red); display: block; margin-bottom: 6px;"><i class="fa-solid fa-phone-volume"></i> Thông Tin Liên Lạc Khẩn Cấp</strong>
-            </div>
-
-            <div class="form-group">
-              <label>Họ Tên Người Thân</label>
-              <input type="text" id="form-emergency-name" class="form-control" placeholder="Họ tên người thân">
-            </div>
-
-            <div class="form-group">
-              <label>Mối Quan Hệ</label>
-              <select id="form-emergency-relation" class="form-control">
-                <option value="Vợ">Vợ</option>
-                <option value="Chồng">Chồng</option>
-                <option value="Bố">Bố</option>
-                <option value="Mẹ">Mẹ</option>
-                <option value="Anh trai">Anh trai</option>
-                <option value="Chị gái">Chị gái</option>
-                <option value="Em trai">Em trai</option>
-                <option value="Người thân khác">Người thân khác</option>
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label>SĐT Liên Hệ Khẩn Cấp</label>
-              <input type="text" id="form-emergency-phone" class="form-control" placeholder="09xxxxxxxx">
-            </div>
-          </div>
-        </div>
-
-        <!-- TAB 4: LƯƠNG, BHXH & HỌC VẤN -->
-        <div class="form-tab-pane" id="form-tab-salary-edu" style="display: none;">
-          <div class="form-grid">
-            <div class="form-group">
-              <label>Lương Cơ Bản (VNĐ) <span class="req">*</span></label>
-              <input type="number" id="form-salary" class="form-control" placeholder="15000000" required>
-            </div>
-
-            <div class="form-group">
-              <label>Tổng Lương / Thu Nhập (VNĐ)</label>
-              <input type="number" id="form-total-salary" class="form-control" placeholder="18000000">
-            </div>
-
-            <div class="form-group">
-              <label>Số Tài Khoản Ngân Hàng</label>
-              <input type="text" id="form-bank-acc" class="form-control" placeholder="Số tài khoản">
-            </div>
-
-            <div class="form-group">
-              <label>Tên Ngân Hàng</label>
-              <select id="form-bank-name" class="form-control">
-                <option value="Vietcombank">Vietcombank</option>
-                <option value="BIDV">BIDV</option>
-                <option value="VietinBank">VietinBank</option>
-                <option value="Techcombank">Techcombank</option>
-                <option value="MBBank">MBBank</option>
-                <option value="ACB">ACB</option>
-                <option value="Agribank">Agribank</option>
-                <option value="VPBank">VPBank</option>
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label>Tên Chi Nhánh / Phòng Giao Dịch</label>
-              <input type="text" id="form-bank-branch" class="form-control" placeholder="Chi nhánh Hà Nội, Chi nhánh Tân Bình...">
-            </div>
-
-            <div class="form-group">
-              <label>Số Sổ BHXH / Mã Số BHXH</label>
-              <input type="text" id="form-bhxh-book" class="form-control" placeholder="Mã số 10 chữ số">
-            </div>
-
-            <div class="form-group" style="grid-column: 1 / -1;">
-              <label>Nơi Đăng Ký Khám, Chữa Bệnh Ban Đầu</label>
-              <input type="text" id="form-hospital" class="form-control" placeholder="Bệnh viện Bạch Mai, Bệnh viện Chợ Rẫy...">
-            </div>
-
-            <div class="form-group">
-              <label>Trình Độ Học Vấn</label>
-              <select id="form-education-level" class="form-control">
-                <option value="Đại học">Đại học</option>
-                <option value="Thạc sĩ">Thạc sĩ</option>
-                <option value="Tiến sĩ">Tiến sĩ</option>
-                <option value="Cao đẳng">Cao đẳng</option>
-                <option value="Trung cấp">Trung cấp</option>
-                <option value="Khác">Khác</option>
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label>Trình Độ Chuyên Môn (Chuyên Ngành Học)</label>
-              <input type="text" id="form-major" class="form-control" placeholder="Kỹ thuật Xây dựng Cầu đường, Kế toán...">
-            </div>
-
-            <div class="form-group" style="grid-column: 1 / -1;">
-              <label>Bằng Cấp Chuyên Môn Khác & Chứng Chỉ Hành Nghề</label>
-              <input type="text" id="form-other-certs" class="form-control" placeholder="Chứng chỉ QLDA Hạng I, Chỉ huy trưởng, PMP, TOEIC...">
-            </div>
-          </div>
-        </div>
-
+      <div class="modal-body" id="form-modal-panes-container" style="overflow-y: auto; padding: 18px 24px; flex: 1;">
+        <!-- Populated dynamically via profile-fields.js -->
       </div>
 
       <div class="modal-footer" style="background: #F8FAFC; border-top: 1px solid var(--border-color); padding: 12px 24px; display: flex; justify-content: space-between; align-items: center;">
         <div style="font-size: 11.5px; color: var(--text-muted);">
-          <i class="fa-solid fa-circle-info"></i> Tất cả 34 trường thông tin sẽ được tự động đồng bộ vào CSDL JSON, Excel và Báo cáo.
+          <i class="fa-solid fa-circle-info"></i> Tất cả 115 trường thông tin chuẩn theo cơ sở dữ liệu sẽ được lưu trữ và đồng bộ tự động.
         </div>
         <div style="display: flex; gap: 8px;">
           <button type="button" class="btn btn-secondary" onclick="appEmployees.closeFormModal()">Hủy Bỏ</button>
@@ -2692,6 +2298,7 @@
 <script src="js/auth.js"></script>
 <script src="js/company.js"></script>
 <script src="js/dashboard.js"></script>
+<script src="js/profile-fields.js"></script>
 <script src="js/employees.js"></script>
 <script src="js/import.js"></script>
 <script src="js/resigned.js"></script>

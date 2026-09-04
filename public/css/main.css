@@ -1205,12 +1205,14 @@ body {
   flex: 1;
 }
 
-.tab-pane {
+.tab-pane,
+.form-tab-pane {
   display: none;
   animation: fadeIn 0.2s ease-out;
 }
 
-.tab-pane.active {
+.tab-pane.active,
+.form-tab-pane.active {
   display: block;
 }
 

@@ -11,6 +11,15 @@ const appEmployees = {
 
   init() {
     this.populateFilterDropdowns();
+    if (typeof buildDetailModalTabsHtml === 'function') {
+      buildDetailModalTabsHtml();
+    }
+    if (typeof buildFormModalTabsHtml === 'function') {
+      buildFormModalTabsHtml();
+    }
+    if (typeof initModalTabSwitching === 'function') {
+      initModalTabSwitching();
+    }
     if (!this.initialized) {
       this.attachEventListeners();
       this.initialized = true;
@@ -62,14 +71,22 @@ const appEmployees = {
 
     // 2. Populate Departments (filtered by selected company if chosen)
     const departments = appData.departments || [];
-    const filteredDepts = selectedCompId 
+    let filteredDepts = selectedCompId 
       ? departments.filter(d => {
           if (d.company_id === selectedCompId) return true;
-          // Fallback prefix match (e.g. TP-KT matches TP)
-          if (d.department_id && (d.department_id.startsWith(selectedCompId + '-') || d.department_id.startsWith(selectedCompId + '_'))) return true;
+          // Fallback prefix / suffix match (e.g. TP-KT matches TP, BGD.PM matches PM)
+          if (d.department_id && (d.department_id.startsWith(selectedCompId + '-') || d.department_id.startsWith(selectedCompId + '_') || d.department_id.endsWith('.' + selectedCompId))) return true;
           return false;
         })
-      : departments;
+      : [...departments];
+
+    // Ensure selectedDeptId is included if it exists in master departments so it is never dropped
+    if (selectedDeptId && !filteredDepts.some(d => d.department_id === selectedDeptId)) {
+      const matchDept = departments.find(d => d.department_id === selectedDeptId);
+      if (matchDept) {
+        filteredDepts.unshift(matchDept);
+      }
+    }
 
     // Auto-select if there's only 1 department in this company and none explicitly chosen
     let activeDeptId = selectedDeptId;
@@ -93,6 +110,9 @@ const appEmployees = {
     positions.forEach(p => {
       posOpts += `<option value="${p.position_id}" ${p.position_id === activePosId ? 'selected' : ''}>${p.position_name} (${p.position_id})</option>`;
     });
+    if (activePosId && !positions.some(p => p.position_id === activePosId)) {
+      posOpts += `<option value="${activePosId}" selected>${activePosId}</option>`;
+    }
     formPosSelect.innerHTML = posOpts;
     if (activePosId) formPosSelect.value = activePosId;
 
@@ -249,7 +269,14 @@ const appEmployees = {
     if (formCompSelect) {
       formCompSelect.addEventListener('change', (e) => {
         const compId = e.target.value;
-        this.populateCompanyDeptPosDropdowns(compId, '', '');
+        const currentDeptId = formDeptSelect ? formDeptSelect.value : '';
+        const currentPosId = formPosSelect ? formPosSelect.value : '';
+        
+        // Keep department if it belongs to selected company, otherwise reset
+        const dept = (appData.departments || []).find(d => d.department_id === currentDeptId);
+        const keepDept = dept && (dept.company_id === compId || !compId);
+        
+        this.populateCompanyDeptPosDropdowns(compId, keepDept ? currentDeptId : '', currentPosId);
       });
     }
 
@@ -257,8 +284,12 @@ const appEmployees = {
       formDeptSelect.addEventListener('change', (e) => {
         const deptId = e.target.value;
         const dept = (appData.departments || []).find(d => d.department_id === deptId);
-        const compId = dept ? (dept.company_id || 'TH-CORP') : (formCompSelect ? formCompSelect.value : '');
-        this.populateCompanyDeptPosDropdowns(compId, deptId, '');
+        const currentCompId = formCompSelect ? formCompSelect.value : '';
+        const compId = dept?.company_id || currentCompId || (appData.companies && appData.companies[0]?.company_id) || 'THG';
+        const currentPosId = formPosSelect ? formPosSelect.value : '';
+
+        // Sync company if department belongs to a company, and PRESERVE current position
+        this.populateCompanyDeptPosDropdowns(compId, deptId, currentPosId);
       });
     }
 
@@ -267,10 +298,29 @@ const appEmployees = {
         const posId = e.target.value;
         const pos = (appData.positions || []).find(p => p.position_id === posId);
         if (pos) {
-          const dept = (appData.departments || []).find(d => d.department_id === pos.department_id);
-          const compId = dept ? (dept.company_id || 'TH-CORP') : (formCompSelect ? formCompSelect.value : '');
-          this.populateCompanyDeptPosDropdowns(compId, pos.department_id || '', posId);
+          // 1. Auto fill Job Title
+          const titleInput = document.getElementById('form-job-title');
+          if (titleInput) {
+            titleInput.value = pos.position_name;
+            titleInput.dataset.autofilled = '1';
+          }
+
+          // 2. IMPORTANT: NEVER clear or overwrite an already selected department!
+          // Only if department has NOT been chosen yet AND position defines a department:
+          const currentDeptId = formDeptSelect ? formDeptSelect.value : '';
+          if (!currentDeptId && pos.department_id) {
+            const dept = (appData.departments || []).find(d => d.department_id === pos.department_id);
+            const currentCompId = (formCompSelect && formCompSelect.value) || (dept ? dept.company_id : '') || 'THG';
+            this.populateCompanyDeptPosDropdowns(currentCompId, pos.department_id, posId);
+          }
         }
+      });
+    }
+
+    const titleInput = document.getElementById('form-job-title');
+    if (titleInput) {
+      titleInput.addEventListener('input', () => {
+        titleInput.dataset.autofilled = '0';
       });
     }
   },
@@ -431,140 +481,33 @@ const appEmployees = {
     window.scrollTo({ top: 300, behavior: 'smooth' });
   },
 
-  // Open Full 8-Tab Detail Modal
+  // Open Full 115 Fields Detail Modal
   async openDetailModal(empId) {
     try {
-      const res = await fetch(`/api/employees/${empId}`);
+      let masterData = (appData.masterMap && appData.masterMap[empId]) ? { ...appData.masterMap[empId] } : null;
+      const res = await fetch(`/api/employees/${encodeURIComponent(empId)}`);
       const json = await res.json();
-      if (!json.success || !json.data) {
-        utils.showToast('Không thể tải chi tiết nhân viên', 'error');
-        return;
-      }
-
-      const { employee, contact, identity, emergency, education, salary, insurance, contracts, account } = json.data;
-      this.selectedEmployee = employee;
-
-      // Safe helper to set textContent without throwing if an element is missing
-      const setVal = (id, val) => {
-        const el = document.getElementById(id);
-        if (el) el.textContent = (val !== undefined && val !== null && val !== '') ? val : '-';
-      };
-
-      // Header
-      setVal('detail-modal-emp-name', `Hồ Sơ Nhân Viên: ${employee.full_name || ''} (${employee.employee_id || ''})`);
-
-      // Tab 1: General
-      setVal('det-emp-id', employee.employee_id);
-      setVal('det-time-code', employee.time_attendance_code);
-      setVal('det-full-name', employee.full_name);
-      setVal('det-gender', employee.gender);
-      setVal('det-dob', utils.formatDate(employee.date_of_birth));
-      setVal('det-birth-place', employee.birth_place);
-      setVal('det-native-place', employee.native_place);
-      setVal('det-ethnicity-rel', `${employee.ethnicity || 'Kinh'} / ${employee.religion || 'Không'}`);
-      setVal('det-marital-children', `${employee.marital_status || 'Độc thân'} (Số con: ${employee.children_count !== undefined ? employee.children_count : 0})`);
-      
-      const empDept = (appData.departments || []).find(d => d.department_id === employee.department_id);
-      const compId = employee.company_id || (empDept ? empDept.company_id : '') || 'TH-CORP';
-      const compName = appData.companyMap[compId] || 'Tổng Công Ty Trung Hải';
-      setVal('det-company-name', compName);
-
-      setVal('det-dept-name', employee.department_name || employee.department_id);
-      setVal('det-pos-name', employee.position_name || employee.position_id);
-      setVal('det-job-rank', employee.job_rank || (salary.salary_grade ? `Cấp ${salary.salary_grade}` : 'Cấp 3'));
-      setVal('det-job-title', employee.job_title || employee.position_name);
-      setVal('det-work-loc', employee.work_location || 'Trụ sở Tổng công ty');
-      setVal('det-direct-mgr', employee.direct_manager_name ? `${employee.direct_manager_name} (${employee.direct_manager_id || ''})` : '-');
-      setVal('det-indirect-mgr', employee.indirect_manager_name ? `${employee.indirect_manager_name} (${employee.indirect_manager_id || ''})` : '-');
-      setVal('det-labor-nature', employee.labor_nature);
-      setVal('det-emp-status', employee.employment_status);
-      setVal('det-start-date', utils.formatDate(employee.start_date || employee.trial_start_date));
-      setVal('det-end-date', employee.end_date === 'Không xác định' ? 'Không xác định' : utils.formatDate(employee.end_date));
-      setVal('det-official-date', utils.formatDate(employee.official_date) || utils.formatDate(employee.trial_start_date));
-      setVal('det-seniority', employee.seniority_text);
-      setVal('det-other-certs', employee.other_certificates || (education && education[0] ? education[0].other_certificates : '') || 'Chứng chỉ An toàn Lao động');
-
-      // Tab 2: Contact
-      setVal('det-mobile', contact.mobile_phone);
-      setVal('det-home-phone', contact.home_phone);
-      setVal('det-work-email', contact.work_email);
-      setVal('det-personal-email', contact.personal_email);
-      setVal('det-perm-addr', contact.permanent_address_full);
-      setVal('det-curr-addr', contact.current_address_full);
-
-      // Tab 3: Identity
-      setVal('det-id-type', identity.doc_type || 'CCCD');
-      setVal('det-id-num', identity.id_number);
-      setVal('det-id-date', utils.formatDate(identity.id_issue_date));
-      setVal('det-id-place', identity.id_issue_place);
-      setVal('det-id-exp', utils.formatDate(identity.id_expiry_date));
-      setVal('det-tax-code', employee.tax_code);
-      setVal('det-passport-num', identity.passport_number);
-      setVal('det-passport-date', utils.formatDate(identity.passport_issue_date));
-
-      // Tab 4: Emergency
-      const emContainer = document.getElementById('det-emergency-container');
-      if (emContainer) {
-        if (emergency && emergency.length > 0) {
-          emContainer.innerHTML = emergency.map(em => `
-            <div class="info-item"><span class="info-label">Họ và Tên Thân Nhân</span><span class="info-value">${em.contact_name || '-'}</span></div>
-            <div class="info-item"><span class="info-label">Mối Quan Hệ</span><span class="info-value">${em.relationship || '-'}</span></div>
-            <div class="info-item"><span class="info-label">Số ĐT Liên Hệ</span><span class="info-value">${em.mobile_phone || '-'}</span></div>
-            <div class="info-item"><span class="info-label">Email Thân Nhân</span><span class="info-value">${em.email || '-'}</span></div>
-            <div class="info-item" style="grid-column: 1 / -1;"><span class="info-label">Địa Chỉ</span><span class="info-value">${em.address || '-'}</span></div>
-          `).join('');
-        } else {
-          emContainer.innerHTML = `<div style="grid-column: 1 / -1; color: var(--text-muted); text-align: center; padding: 20px;">Chưa có thông tin người liên hệ khẩn cấp.</div>`;
+      if (json.success && json.data) {
+        if (json.data.master_profile) {
+          masterData = { ...json.data.master_profile };
         }
+        this.selectedEmployee = json.data.employee || json.data;
+      }
+      if (!masterData) {
+        masterData = { 'Mã nhân viên': empId };
       }
 
-      // Tab 5: Education
-      const eduContainer = document.getElementById('det-education-container');
-      if (eduContainer) {
-        if (education && education.length > 0) {
-          eduContainer.innerHTML = education.map(ed => `
-            <div class="info-item"><span class="info-label">Trình Độ Văn Hóa</span><span class="info-value">${ed.education_level || 'Đại học'}</span></div>
-            <div class="info-item"><span class="info-label">Trình Độ Đào Tạo</span><span class="info-value">${ed.degree_type || 'Chính quy'}</span></div>
-            <div class="info-item"><span class="info-label">Cơ Sở Đào Tạo (Trường)</span><span class="info-value">${ed.institution || '-'}</span></div>
-            <div class="info-item"><span class="info-label">Khoa / Bộ Môn</span><span class="info-value">${ed.faculty || '-'}</span></div>
-            <div class="info-item"><span class="info-label">Chuyên Ngành Tốt Nghiệp</span><span class="info-value">${ed.major || '-'}</span></div>
-            <div class="info-item"><span class="info-label">Năm Tốt Nghiệp / Xếp Loại</span><span class="info-value">${ed.graduation_year || '-'} (${ed.classification || '-'})</span></div>
-            <div class="info-item" style="grid-column: 1 / -1;"><span class="info-label">Bằng Cấp Chuyên Môn Khác</span><span class="info-value" style="color: #059669;">${ed.other_certificates || employee.other_certificates || '-'}</span></div>
-          `).join('');
-        } else {
-          eduContainer.innerHTML = `<div style="grid-column: 1 / -1; color: var(--text-muted); text-align: center; padding: 20px;">Chưa có thông tin văn bằng / học vị.</div>`;
-        }
+      if (typeof fillDetailModalData === 'function') {
+        fillDetailModalData(masterData);
       }
 
-      // Tab 6: Salary
-      setVal('det-salary-grade', salary.salary_grade || '1');
-      setVal('det-base-salary', utils.formatCurrency(salary.base_salary));
-      setVal('det-total-salary', utils.formatCurrency(salary.total_salary));
-      setVal('det-ins-salary', utils.formatCurrency(salary.insurance_salary));
-      setVal('det-bank-acc', salary.bank_account_number);
-      setVal('det-bank-name', salary.bank_name);
-      setVal('det-bank-branch', salary.bank_branch);
-
-      // Tab 7: Insurance
-      setVal('det-has-ins', insurance.has_insurance || 'Không tham gia');
-      setVal('det-bhxh-code', insurance.social_insurance_code);
-      setVal('det-bhxh-book', insurance.social_insurance_book_no);
-      setVal('det-ins-date', utils.formatDate(insurance.insurance_join_date));
-      setVal('det-ins-rate', '10.5% (BHXH 8%, BHYT 1.5%, BHTN 1%)');
-      setVal('det-hospital', insurance.hospital_registered);
-      setVal('det-union', insurance.union_member || 'Không');
-
-      // Tab 8: Contract & Account
-      const firstContract = contracts && contracts.length > 0 ? contracts[0] : {};
-      setVal('det-contract-id', firstContract.contract_id);
-      setVal('det-contract-type', firstContract.contract_type || employee.contract_type || 'Hợp đồng lao động');
-      setVal('det-contract-status', firstContract.contract_status || 'HIỆU LỰC');
-      setVal('det-acc-email', account.account_email || `${(employee.employee_id || '').toLowerCase()}@trunghaico.vn`);
-      setVal('det-acc-role', account.role || 'USER');
-      setVal('det-acc-status', account.account_status || 'Đã kích hoạt');
+      const titleEl = document.getElementById('detail-modal-emp-name');
+      if (titleEl) {
+        titleEl.textContent = `Hồ Sơ Nhân Viên: ${masterData['Họ và tên'] || empId} (${empId})`;
+      }
 
       // Reset to Tab 1
-      const defaultTabBtn = document.querySelector('#modal-employee-detail .modal-tab-btn[data-tab="tab-general"]');
+      const defaultTabBtn = document.querySelector('#modal-employee-detail .modal-tab-btn');
       if (defaultTabBtn) defaultTabBtn.click();
 
       // Show modal
@@ -577,125 +520,68 @@ const appEmployees = {
   },
 
   closeDetailModal() {
-    document.getElementById('modal-employee-detail').classList.remove('active');
+    const modalEl = document.getElementById('modal-employee-detail');
+    if (modalEl) modalEl.classList.remove('active');
   },
 
   openAddModal() {
     document.getElementById('form-is-edit').value = '0';
     const oldInput = document.getElementById('form-old-emp-id');
     if (oldInput) oldInput.value = '';
-    document.getElementById('form-modal-title').textContent = 'Thêm Nhân Viên Mới (Đầy Đủ 34 Cột)';
-    document.getElementById('form-modal-icon').className = 'fa-solid fa-user-plus';
-    document.getElementById('form-emp-id').value = '';
-    document.getElementById('form-emp-id').readOnly = false;
-    document.getElementById('employee-crud-form').reset();
 
-    // Default values
-    document.getElementById('form-gender').value = 'Nam';
-    document.getElementById('form-ethnicity').value = 'Kinh';
-    document.getElementById('form-religion').value = 'Không';
-    document.getElementById('form-marital-status').value = 'Độc thân';
-    document.getElementById('form-children-count').value = '0';
-    document.getElementById('form-job-rank').value = 'Cấp 3 - Chuyên viên / Nhân viên Nghiệp vụ';
-    document.getElementById('form-labor-nature').value = 'Chính thức';
-    document.getElementById('form-emp-status').value = 'Đang làm việc';
-    document.getElementById('form-contract-type').value = 'Hợp đồng lao động không xác định thời hạn';
-    document.getElementById('form-id-place').value = 'Cục Cảnh sát Quản lý hành chính về trật tự xã hội';
-    document.getElementById('form-bank-name').value = 'Vietcombank';
-    document.getElementById('form-education-level').value = 'Đại học';
-    document.getElementById('form-emergency-relation').value = 'Vợ';
+    const titleEl = document.getElementById('form-modal-title');
+    if (titleEl) titleEl.textContent = 'Thêm Nhân Sự Mới (115 Trường Dữ Liệu)';
+    const iconEl = document.getElementById('form-modal-icon');
+    if (iconEl) iconEl.className = 'fa-solid fa-user-plus';
+
+    const form = document.getElementById('employee-crud-form');
+    if (form) form.reset();
+
+    if (typeof fillFormModalData === 'function') {
+      fillFormModalData({}, false);
+    }
 
     // Switch to Tab 1
-    document.querySelector('.form-tab-btn[data-tab="form-tab-personal"]').click();
+    const firstTabBtn = document.querySelector('#modal-employee-form .form-tab-btn');
+    if (firstTabBtn) firstTabBtn.click();
 
-    // Cascading dropdowns: default company, dept, pos from available settings
-    const defaultCompId = (appData.companies && appData.companies[0]?.company_id) || 'TH-CORP';
-    const firstDept = (appData.departments || []).find(d => (d.company_id || 'TH-CORP') === defaultCompId);
-    const defaultDeptId = firstDept ? firstDept.department_id : ((appData.departments && appData.departments[0]?.department_id) || '');
-    const firstPos = (appData.positions || []).find(p => p.department_id === defaultDeptId);
-    const defaultPosId = firstPos ? firstPos.position_id : ((appData.positions && appData.positions[0]?.position_id) || '');
-
-    this.populateCompanyDeptPosDropdowns(defaultCompId, defaultDeptId, defaultPosId);
-
-    document.getElementById('modal-employee-form').classList.add('active');
+    const modalEl = document.getElementById('modal-employee-form');
+    if (modalEl) modalEl.classList.add('active');
   },
 
   async openEditModal(empId) {
     try {
-      const res = await fetch(`/api/employees/${empId}`);
+      let masterData = (appData.masterMap && appData.masterMap[empId]) ? { ...appData.masterMap[empId] } : null;
+      const res = await fetch(`/api/employees/${encodeURIComponent(empId)}`);
       const json = await res.json();
-      if (!json.success || !json.data) {
-        utils.showToast('Không thể tải chi tiết nhân viên để sửa', 'error');
-        return;
+      if (json.success && json.data) {
+        if (json.data.master_profile) {
+          masterData = { ...json.data.master_profile };
+        }
+      }
+      if (!masterData) {
+        masterData = { 'Mã nhân viên': empId };
       }
 
-      const { employee, contact, identity, emergency, education, salary, insurance, contracts } = json.data;
-      const firstContract = contracts && contracts.length > 0 ? contracts[0] : {};
-      const firstEmerg = emergency && emergency.length > 0 ? emergency[0] : {};
-      const firstEdu = education && education.length > 0 ? education[0] : {};
-
       document.getElementById('form-is-edit').value = '1';
-      document.getElementById('form-old-emp-id').value = empId;
-      document.getElementById('form-modal-title').textContent = `Chỉnh Sửa Hồ Sơ: ${employee.full_name} (${empId})`;
-      document.getElementById('form-modal-icon').className = 'fa-solid fa-user-pen';
-      
-      // Tab 1: Personal (Mã nhân viên có thể thay đổi được khi chỉnh sửa)
-      document.getElementById('form-emp-id').value = employee.employee_id || empId;
-      document.getElementById('form-emp-id').readOnly = false;
-      document.getElementById('form-full-name').value = employee.full_name || '';
-      document.getElementById('form-gender').value = employee.gender || 'Nam';
-      document.getElementById('form-dob').value = employee.date_of_birth || '';
-      document.getElementById('form-birth-place').value = employee.birth_place || '';
-      document.getElementById('form-native-place').value = employee.native_place || '';
-      document.getElementById('form-ethnicity').value = employee.ethnicity || 'Kinh';
-      document.getElementById('form-religion').value = employee.religion || 'Không';
-      document.getElementById('form-marital-status').value = employee.marital_status || 'Độc thân';
-      document.getElementById('form-children-count').value = employee.children_count !== undefined ? employee.children_count : 0;
-      document.getElementById('form-tax-code').value = employee.tax_code || '';
+      const oldInput = document.getElementById('form-old-emp-id');
+      if (oldInput) oldInput.value = empId;
 
-      // Tab 2: Job & Contract (Cascading Company -> Dept -> Position)
-      const empDept = (appData.departments || []).find(d => d.department_id === employee.department_id);
-      const compId = employee.company_id || (empDept ? empDept.company_id : '') || 'TH-CORP';
-      this.populateCompanyDeptPosDropdowns(compId, employee.department_id || '', employee.position_id || '');
-      document.getElementById('form-job-rank').value = employee.job_rank || (salary.salary_grade ? `Cấp ${salary.salary_grade} - Kỹ sư Chính` : 'Cấp 3 - Chuyên viên / Nhân viên Nghiệp vụ');
-      document.getElementById('form-job-title').value = employee.job_title || '';
-      document.getElementById('form-work-location').value = employee.work_location || 'Trụ sở Tổng công ty - Tòa nhà Trung Hải, Hà Nội';
-      document.getElementById('form-direct-mgr').value = employee.direct_manager_id || '';
-      document.getElementById('form-labor-nature').value = employee.labor_nature || 'Chính thức';
-      document.getElementById('form-emp-status').value = employee.employment_status || 'Đang làm việc';
-      document.getElementById('form-contract-type').value = firstContract.contract_type || employee.contract_type || 'Hợp đồng lao động không xác định thời hạn';
-      document.getElementById('form-start-date').value = employee.start_date || employee.trial_start_date || '';
-      document.getElementById('form-end-date').value = employee.end_date || firstContract.end_date || 'Không xác định';
+      const titleEl = document.getElementById('form-modal-title');
+      if (titleEl) titleEl.textContent = `Chỉnh Sửa Hồ Sơ: ${masterData['Họ và tên'] || empId} (${empId})`;
+      const iconEl = document.getElementById('form-modal-icon');
+      if (iconEl) iconEl.className = 'fa-solid fa-user-pen';
 
-      // Tab 3: Contact, CCCD & Emergency
-      document.getElementById('form-mobile').value = contact.mobile_phone || '';
-      document.getElementById('form-email').value = contact.work_email || '';
-      document.getElementById('form-personal-email').value = contact.personal_email || '';
-      document.getElementById('form-perm-address').value = contact.permanent_address_full || '';
-      document.getElementById('form-curr-address').value = contact.current_address_full || '';
-      document.getElementById('form-id-num').value = identity.id_number || '';
-      document.getElementById('form-id-date').value = identity.id_issue_date || '';
-      document.getElementById('form-id-place').value = identity.id_issue_place || 'Cục Cảnh sát Quản lý hành chính về trật tự xã hội';
-      document.getElementById('form-passport-num').value = identity.passport_number || '';
-      document.getElementById('form-emergency-name').value = firstEmerg.contact_name || '';
-      document.getElementById('form-emergency-relation').value = firstEmerg.relationship || 'Vợ';
-      document.getElementById('form-emergency-phone').value = firstEmerg.mobile_phone || '';
-
-      // Tab 4: Salary, Insurance & Education
-      document.getElementById('form-salary').value = salary.base_salary || 0;
-      document.getElementById('form-total-salary').value = salary.total_salary || salary.base_salary || 0;
-      document.getElementById('form-bank-acc').value = salary.bank_account_number || '';
-      document.getElementById('form-bank-name').value = salary.bank_name || 'Vietcombank';
-      document.getElementById('form-bank-branch').value = salary.bank_branch || '';
-      document.getElementById('form-bhxh-book').value = insurance.social_insurance_book_no || insurance.social_insurance_code || '';
-      document.getElementById('form-hospital').value = insurance.hospital_registered || '';
-      document.getElementById('form-education-level').value = firstEdu.education_level || 'Đại học';
-      document.getElementById('form-major').value = firstEdu.major || '';
-      document.getElementById('form-other-certs').value = employee.other_certificates || firstEdu.other_certificates || '';
+      if (typeof fillFormModalData === 'function') {
+        fillFormModalData(masterData, true);
+      }
 
       // Switch to Tab 1
-      document.querySelector('.form-tab-btn[data-tab="form-tab-personal"]').click();
-      document.getElementById('modal-employee-form').classList.add('active');
+      const firstTabBtn = document.querySelector('#modal-employee-form .form-tab-btn');
+      if (firstTabBtn) firstTabBtn.click();
+
+      const modalEl = document.getElementById('modal-employee-form');
+      if (modalEl) modalEl.classList.add('active');
     } catch (e) {
       console.error(e);
       utils.showToast('Lỗi khi mở form chỉnh sửa', 'error');
@@ -703,73 +589,75 @@ const appEmployees = {
   },
 
   closeFormModal() {
-    document.getElementById('modal-employee-form').classList.remove('active');
+    const modalEl = document.getElementById('modal-employee-form');
+    if (modalEl) modalEl.classList.remove('active');
   },
 
   async handleFormSubmit(e) {
-    e.preventDefault();
+    if (e) e.preventDefault();
     const isEdit = document.getElementById('form-is-edit').value === '1';
     const oldEmpId = (document.getElementById('form-old-emp-id')?.value || '').trim();
-    const empId = document.getElementById('form-emp-id').value.trim();
+
+    const masterData = typeof collectFormModalData === 'function' ? collectFormModalData() : {};
+    const empId = (masterData['Mã nhân viên'] || '').trim();
+    const fullName = (masterData['Họ và tên'] || '').trim();
 
     if (!empId) {
-      utils.showToast('Vui lòng nhập Mã nhân viên', 'error');
+      utils.showToast('Vui lòng nhập Mã nhân viên (*)', 'error');
+      return;
+    }
+    if (!fullName) {
+      utils.showToast('Vui lòng nhập Họ và tên (*)', 'error');
       return;
     }
 
     const payload = {
+      master_profile: masterData,
       employee_id: empId,
-      full_name: document.getElementById('form-full-name').value.trim(),
-      gender: document.getElementById('form-gender').value,
-      date_of_birth: document.getElementById('form-dob').value || null,
-      birth_place: document.getElementById('form-birth-place').value.trim(),
-      native_place: document.getElementById('form-native-place').value.trim(),
-      ethnicity: document.getElementById('form-ethnicity').value.trim(),
-      religion: document.getElementById('form-religion').value.trim(),
-      marital_status: document.getElementById('form-marital-status').value,
-      children_count: parseInt(document.getElementById('form-children-count').value, 10) || 0,
-      tax_code: document.getElementById('form-tax-code').value.trim(),
-
-      company_id: document.getElementById('form-company-id')?.value || '',
-      department_id: document.getElementById('form-dept-id').value,
-      position_id: document.getElementById('form-pos-id').value,
-      job_rank: document.getElementById('form-job-rank').value,
-      job_title: document.getElementById('form-job-title').value.trim(),
-      work_location: document.getElementById('form-work-location').value.trim(),
-      direct_manager_id: document.getElementById('form-direct-mgr').value || null,
-      labor_nature: document.getElementById('form-labor-nature').value,
-      employment_status: document.getElementById('form-emp-status').value,
-      contract_type: document.getElementById('form-contract-type').value,
-      start_date: document.getElementById('form-start-date').value || null,
-      end_date: document.getElementById('form-end-date').value.trim() || 'Không xác định',
-
-      mobile_phone: document.getElementById('form-mobile').value.trim(),
-      work_email: document.getElementById('form-email').value.trim(),
-      personal_email: document.getElementById('form-personal-email').value.trim(),
-      permanent_address_full: document.getElementById('form-perm-address').value.trim(),
-      current_address_full: document.getElementById('form-curr-address').value.trim(),
-
-      id_number: document.getElementById('form-id-num').value.trim(),
-      id_issue_date: document.getElementById('form-id-date').value || null,
-      id_issue_place: document.getElementById('form-id-place').value.trim(),
-      passport_number: document.getElementById('form-passport-num').value.trim() || null,
-
-      emergency_name: document.getElementById('form-emergency-name').value.trim(),
-      emergency_relation: document.getElementById('form-emergency-relation').value,
-      emergency_phone: document.getElementById('form-emergency-phone').value.trim(),
-
-      base_salary: parseFloat(document.getElementById('form-salary').value) || 0,
-      total_salary: parseFloat(document.getElementById('form-total-salary').value) || parseFloat(document.getElementById('form-salary').value) || 0,
-      bank_account_number: document.getElementById('form-bank-acc').value.trim(),
-      bank_name: document.getElementById('form-bank-name').value,
-      bank_branch: document.getElementById('form-bank-branch').value.trim(),
-
-      social_insurance_book_no: document.getElementById('form-bhxh-book').value.trim(),
-      hospital_registered: document.getElementById('form-hospital').value.trim(),
-
-      education_level: document.getElementById('form-education-level').value,
-      major: document.getElementById('form-major').value.trim(),
-      other_certificates: document.getElementById('form-other-certs').value.trim()
+      full_name: fullName,
+      gender: masterData['Giới tính'] || 'Nam',
+      date_of_birth: masterData['Ngày sinh'] || null,
+      birth_place: masterData['Nơi sinh'] || '',
+      native_place: masterData['Nguyên quán'] || '',
+      ethnicity: masterData['Dân tộc'] || 'Kinh',
+      religion: masterData['Tôn giáo'] || 'Không',
+      marital_status: masterData['Tình trạng hôn nhân'] || 'Độc thân',
+      tax_code: masterData['MST cá nhân'] || '',
+      department_id: masterData['Mã đơn vị công tác'] || masterData['Đơn vị công tác'] || '',
+      department_name: masterData['Đơn vị công tác'] || '',
+      position_id: masterData['Mã vị trí công việc'] || masterData['Vị trí công việc'] || '',
+      position_name: masterData['Vị trí công việc'] || '',
+      job_rank: masterData['Bậc'] || masterData['Bậc lương'] || 'Cấp 3',
+      job_title: masterData['Chức danh'] || masterData['Vị trí công việc'] || '',
+      work_location: masterData['Địa điểm làm việc'] || '',
+      direct_manager_name: masterData['Quản lý trực tiếp'] || '',
+      labor_nature: masterData['Tính chất lao động'] || 'Chính thức',
+      employment_status: masterData['Trạng thái lao động'] || 'Đang làm việc',
+      contract_type: masterData['Loại hợp đồng'] || 'Hợp đồng lao động không xác định thời hạn',
+      start_date: masterData['Ngày học việc'] || masterData['Ngày thử việc'] || masterData['Ngày chính thức'] || '',
+      end_date: masterData['Ngày hết hiệu lực'] || masterData['Ngày nghỉ việc'] || 'Không xác định',
+      mobile_phone: masterData['ĐT di động'] || '',
+      work_email: masterData['Email cơ quan'] || '',
+      personal_email: masterData['Email cá nhân'] || '',
+      permanent_address_full: masterData['Hộ khẩu thường trú'] || '',
+      current_address_full: masterData['Chỗ ở hiện nay'] || '',
+      id_number: masterData['Số CMND'] || '',
+      id_issue_date: masterData['Ngày cấp giấy tờ'] || null,
+      id_issue_place: masterData['Nơi cấp giấy tờ'] || '',
+      passport_number: masterData['Số Hộ chiếu'] || '',
+      emergency_name: masterData['Họ và tên (LHKC)'] || '',
+      emergency_relation: masterData['Quan hệ (LHKC)'] || '',
+      emergency_phone: masterData['ĐT di động (LHKC)'] || '',
+      base_salary: parseFloat(masterData['Lương cơ bản']) || 0,
+      total_salary: parseFloat(masterData['Tổng lương']) || 0,
+      bank_account_number: masterData['TK ngân hàng'] || '',
+      bank_name: masterData['Ngân hàng'] || 'Vietcombank',
+      bank_branch: masterData['Chi nhánh'] || '',
+      social_insurance_book_no: masterData['Số sổ BHXH'] || '',
+      hospital_registered: masterData['Nơi đăng ký KCB'] || '',
+      education_level: masterData['Trình độ đào tạo'] || '',
+      major: masterData['Chuyên ngành'] || '',
+      other_certificates: masterData['Bằng cấp chuyên môn khác'] || ''
     };
 
     try {
@@ -785,7 +673,7 @@ const appEmployees = {
       const json = await res.json();
 
       if (json.success) {
-        utils.showToast(isEdit ? 'Cập nhật nhân viên thành công!' : 'Thêm nhân viên mới thành công!', 'success');
+        utils.showToast(isEdit ? 'Cập nhật nhân sự thành công!' : 'Thêm nhân sự mới thành công!', 'success');
         this.closeFormModal();
         await appData.init();
         appDashboard.init();

@@ -15,6 +15,10 @@ const appOrganization = {
   deptSearchQuery: '',
   posSearchQuery: '',
   contractSearchQuery: '',
+  contractPage: 1,
+  contractPageSize: 25,
+  contractFilterType: '',
+  contractFilterStatus: '',
   deptCompanyFilter: '',
   posDeptFilter: '',
 
@@ -62,6 +66,34 @@ const appOrganization = {
     if (contractSearch) {
       contractSearch.addEventListener('input', (e) => {
         this.contractSearchQuery = e.target.value.trim().toLowerCase();
+        this.contractPage = 1;
+        this.renderContractsTable();
+      });
+    }
+
+    const contractTypeFilter = document.getElementById('contract-filter-type');
+    if (contractTypeFilter) {
+      contractTypeFilter.addEventListener('change', (e) => {
+        this.contractFilterType = e.target.value.trim().toLowerCase();
+        this.contractPage = 1;
+        this.renderContractsTable();
+      });
+    }
+
+    const contractStatusFilter = document.getElementById('contract-filter-status');
+    if (contractStatusFilter) {
+      contractStatusFilter.addEventListener('change', (e) => {
+        this.contractFilterStatus = e.target.value.trim();
+        this.contractPage = 1;
+        this.renderContractsTable();
+      });
+    }
+
+    const contractPageSize = document.getElementById('contract-page-size');
+    if (contractPageSize) {
+      contractPageSize.addEventListener('change', (e) => {
+        this.contractPageSize = parseInt(e.target.value, 10) || 25;
+        this.contractPage = 1;
         this.renderContractsTable();
       });
     }
@@ -933,18 +965,77 @@ const appOrganization = {
     if (!tbody) return;
 
     const filtered = (appData.contracts || []).filter(c => {
-      if (!this.contractSearchQuery) return true;
-      const cid = (c.contract_id || '').toLowerCase();
-      const eid = (c.employee_id || '').toLowerCase();
-      const name = (c.full_name || '').toLowerCase();
-      const type = (c.contract_type || '').toLowerCase();
-      return cid.includes(this.contractSearchQuery) || 
-             eid.includes(this.contractSearchQuery) || 
-             name.includes(this.contractSearchQuery) ||
-             type.includes(this.contractSearchQuery);
+      // 1. Search Query filter
+      if (this.contractSearchQuery) {
+        const cid = (c.contract_id || '').toLowerCase();
+        const eid = (c.employee_id || '').toLowerCase();
+        const name = (c.full_name || '').toLowerCase();
+        const type = (c.contract_type || '').toLowerCase();
+        const matchSearch = cid.includes(this.contractSearchQuery) || 
+                            eid.includes(this.contractSearchQuery) || 
+                            name.includes(this.contractSearchQuery) ||
+                            type.includes(this.contractSearchQuery);
+        if (!matchSearch) return false;
+      }
+
+      // 2. Contract Type Filter
+      if (this.contractFilterType) {
+        const type = (c.contract_type || '').toLowerCase();
+        if (!type.includes(this.contractFilterType)) return false;
+      }
+
+      // 3. Contract Status Filter
+      if (this.contractFilterStatus) {
+        const st = (c.contract_status || '').toUpperCase();
+        if (st !== this.contractFilterStatus.toUpperCase()) return false;
+      }
+
+      return true;
     });
 
-    if (filtered.length === 0) {
+    const total = filtered.length;
+    const pageSize = this.contractPageSize || 25;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    if (this.contractPage > totalPages) {
+      this.contractPage = totalPages;
+    }
+    const page = Math.max(1, this.contractPage);
+    const start = (page - 1) * pageSize;
+    const pageData = filtered.slice(start, start + pageSize);
+
+    // Update pagination UI
+    const infoEl = document.getElementById('contracts-pagination-info');
+    if (infoEl) {
+      if (total === 0) {
+        infoEl.textContent = 'Hiển thị 0 / 0 hợp đồng';
+      } else {
+        const end = Math.min(start + pageSize, total);
+        infoEl.textContent = `Hiển thị ${start + 1} - ${end} trên tổng số ${total} hợp đồng (Trang ${page}/${totalPages})`;
+      }
+    }
+
+    const controlsEl = document.getElementById('contracts-pagination-controls');
+    if (controlsEl) {
+      if (totalPages <= 1) {
+        controlsEl.innerHTML = '';
+      } else {
+        let buttonsHtml = '';
+        buttonsHtml += `<button class="btn btn-sm btn-secondary" onclick="appOrganization.goContractPage(1)" ${page === 1 ? 'disabled' : ''} title="Trang đầu"><i class="fa-solid fa-angles-left"></i></button>`;
+        buttonsHtml += `<button class="btn btn-sm btn-secondary" onclick="appOrganization.goContractPage(${page - 1})" ${page === 1 ? 'disabled' : ''} title="Trang trước"><i class="fa-solid fa-angle-left"></i></button>`;
+
+        const startP = Math.max(1, page - 2);
+        const endP = Math.min(totalPages, startP + 4);
+        for (let p = startP; p <= endP; p++) {
+          buttonsHtml += `<button class="btn btn-sm ${p === page ? 'btn-primary' : 'btn-secondary'}" onclick="appOrganization.goContractPage(${p})">${p}</button>`;
+        }
+
+        buttonsHtml += `<button class="btn btn-sm btn-secondary" onclick="appOrganization.goContractPage(${page + 1})" ${page === totalPages ? 'disabled' : ''} title="Trang sau"><i class="fa-solid fa-angle-right"></i></button>`;
+        buttonsHtml += `<button class="btn btn-sm btn-secondary" onclick="appOrganization.goContractPage(${totalPages})" ${page === totalPages ? 'disabled' : ''} title="Trang cuối"><i class="fa-solid fa-angles-right"></i></button>`;
+        controlsEl.innerHTML = buttonsHtml;
+      }
+    }
+
+    if (pageData.length === 0) {
       tbody.innerHTML = `
         <tr>
           <td colspan="7" style="text-align: center; padding: 24px; color: var(--text-muted);">
@@ -956,29 +1047,39 @@ const appOrganization = {
       return;
     }
 
-    tbody.innerHTML = filtered.slice(0, 100).map(c => {
-      const isOfficial = c.contract_type && c.contract_type.includes('KXD');
+    tbody.innerHTML = pageData.map(c => {
+      // Mã hợp đồng chính là mã nhân sự
+      const contractCode = c.employee_id || c.contract_id || '-';
+      const empId = c.employee_id || c.contract_id || '-';
+      const isOfficial = c.contract_type && (c.contract_type.includes('KXD') || c.contract_type.toLowerCase().includes('không xác định'));
       const badgeType = isOfficial ? 'badge-active' : 'badge-navy';
-      const statusBadge = c.contract_status === 'HIỆU LỰC' 
+      const statusBadge = (c.contract_status === 'HIỆU LỰC' || !c.contract_status)
         ? '<span class="badge badge-active"><i class="fa-solid fa-circle-check"></i> HIỆU LỰC</span>'
         : '<span class="badge badge-resigned"><i class="fa-solid fa-ban"></i> HẾT HẠN</span>';
 
       return `
         <tr>
-          <td><strong style="color: var(--primary-navy); font-family: monospace;">${c.contract_id}</strong></td>
+          <td><strong style="color: var(--primary-navy); font-family: monospace;">${contractCode}</strong></td>
           <td>
-            <span class="badge badge-navy" style="cursor: pointer;" onclick="appEmployees.openDetailModal('${c.employee_id}')" title="Xem chi tiết nhân viên">
-              ${c.employee_id}
+            <span class="badge badge-navy" style="cursor: pointer;" onclick="appEmployees.openDetailModal('${empId}')" title="Xem chi tiết nhân viên">
+              ${empId}
             </span>
           </td>
-          <td><strong style="color: var(--text-primary); cursor: pointer;" onclick="appEmployees.openDetailModal('${c.employee_id}')">${c.full_name}</strong></td>
-          <td><span class="badge ${badgeType}">${c.contract_type}</span></td>
-          <td>${utils.formatDate(c.trial_start_date)}</td>
-          <td>${utils.formatDate(c.official_date)}</td>
+          <td><strong style="color: var(--text-primary); cursor: pointer;" onclick="appEmployees.openDetailModal('${empId}')">${c.full_name || '-'}</strong></td>
+          <td><span class="badge ${badgeType}">${c.contract_type || '-'}</span></td>
+          <td>${utils.formatDate(c.trial_start_date) || '-'}</td>
+          <td>${utils.formatDate(c.official_date) || '-'}</td>
           <td>${statusBadge}</td>
         </tr>
       `;
     }).join('');
+  },
+
+  goContractPage(page) {
+    this.contractPage = page;
+    this.renderContractsTable();
+    const tableEl = document.getElementById('view-contracts');
+    if (tableEl) tableEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
   },
 
   // ========================================================================

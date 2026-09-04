@@ -449,8 +449,18 @@ const appAccounts = {
 
   async confirmDeleteAccount() {
     try {
+      const user = (typeof appAuth !== 'undefined' && typeof appAuth.getCurrentUser === 'function')
+        ? appAuth.getCurrentUser()
+        : (typeof appAuth !== 'undefined' && appAuth?.currentUser ? appAuth.currentUser : null);
+
       const res = await fetch(`/api/accounts/${this.selectedAccountId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          operator_id: user?.employee_id || 'TH-1948',
+          operator_name: user?.full_name || 'Huỳnh Thanh Long',
+          operator_role: user?.role || 'ADMIN'
+        })
       });
       const json = await res.json();
       if (json.success) {
