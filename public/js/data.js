@@ -27,10 +27,23 @@ const appData = {
   posMap: {},
   empMap: {},
 
+  getApiHeaders() {
+    const headers = { 'Content-Type': 'application/json' };
+    try {
+      const cfgStr = localStorage.getItem('hrm_google_sheets_config');
+      if (cfgStr) {
+        const cfg = JSON.parse(cfgStr);
+        if (cfg.spreadsheetId) headers['x-spreadsheet-id'] = cfg.spreadsheetId;
+        if (cfg.credentials) headers['x-google-credentials'] = typeof cfg.credentials === 'string' ? cfg.credentials : JSON.stringify(cfg.credentials);
+      }
+    } catch (e) {}
+    return headers;
+  },
+
   // Fetch all tables from API
   async init() {
     try {
-      const res = await fetch('/api/data');
+      const res = await fetch('/api/data', { headers: this.getApiHeaders() });
       const json = await res.json();
       if (json.success && json.tables) {
         this.tables = json.tables;

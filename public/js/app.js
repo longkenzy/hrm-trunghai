@@ -8,7 +8,16 @@ const app = {
     
     // Check if system needs Initial Setup Wizard
     try {
-      const setupRes = await fetch('/api/setup/status');
+      const sheetsCfgStr = localStorage.getItem('hrm_google_sheets_config');
+      const headers = {};
+      if (sheetsCfgStr) {
+        try {
+          const cfg = JSON.parse(sheetsCfgStr);
+          if (cfg.spreadsheetId) headers['x-spreadsheet-id'] = cfg.spreadsheetId;
+        } catch (e) {}
+      }
+
+      const setupRes = await fetch('/api/setup/status', { headers });
       const setupData = await setupRes.json();
       if (setupData && setupData.is_setup_completed === false) {
         window.location.href = '/setup';

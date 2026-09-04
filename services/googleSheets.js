@@ -81,8 +81,25 @@ function saveConfig(cfg) {
     return true;
 }
 
-// Get Google Sheets API Client (Checks in-memory, env var, /tmp, then local disk)
-function getSheetsClient() {
+// Get Google Sheets API Client (Checks customCredentials, in-memory, env var, /tmp, then local disk)
+function getSheetsClient(customCredentials) {
+    // 0. Check customCredentials passed directly from request header / caller
+    if (customCredentials) {
+        try {
+            const credentials = typeof customCredentials === 'string' ? JSON.parse(customCredentials) : customCredentials;
+            const auth = new google.auth.GoogleAuth({
+                credentials,
+                scopes: [
+                    'https://www.googleapis.com/auth/spreadsheets',
+                    'https://www.googleapis.com/auth/drive'
+                ]
+            });
+            return google.sheets({ version: 'v4', auth });
+        } catch (e) {
+            console.error('Error parsing custom credentials:', e.message);
+        }
+    }
+
     // 1. Check for in-memory credentials first
     if (inMemoryCredentials) {
         const auth = new google.auth.GoogleAuth({
@@ -292,14 +309,14 @@ async function exportTableToGoogleSheets(tableName, rows, customSpreadsheetId) {
 }
 
 // Export ALL tables from local DB to Google Sheets
-async function exportAllToGoogleSheets(db, customSpreadsheetId) {
+async function exportAllToGoogleSheets(db, customSpreadsheetId, customCredentials) {
     const cfg = getConfig();
     const spreadsheetId = customSpreadsheetId || cfg.spreadsheetId;
     if (!spreadsheetId) {
         throw new Error('Chưa cấu hình Spreadsheet ID');
     }
 
-    const sheets = getSheetsClient();
+    const sheets = getSheetsClient(customCredentials);
     const tableNames = Object.keys(db.tables || {});
     await ensureSheets(sheets, spreadsheetId, tableNames);
 
@@ -323,14 +340,14 @@ async function exportAllToGoogleSheets(db, customSpreadsheetId) {
 }
 
 // Import ALL tables from Google Sheets into local format (Optimized with batchGet)
-async function importAllFromGoogleSheets(customSpreadsheetId) {
+async function importAllFromGoogleSheets(customSpreadsheetId, customCredentials) {
     const cfg = getConfig();
     const spreadsheetId = customSpreadsheetId || cfg.spreadsheetId;
     if (!spreadsheetId) {
         throw new Error('Chưa cấu hình Spreadsheet ID');
     }
 
-    const sheets = getSheetsClient();
+    const sheets = getSheetsClient(customCredentials);
     const meta = await sheets.spreadsheets.get({ spreadsheetId });
     const sheetTitles = (meta.data.sheets || []).map(s => s.properties.title);
     if (sheetTitles.length === 0) {

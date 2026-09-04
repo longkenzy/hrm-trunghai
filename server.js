@@ -270,9 +270,10 @@ let lastCloudSyncTime = 0;
 const CLOUD_CACHE_TTL_MS = 20000; // 20s cache window to avoid hitting Google quota
 let isSyncingFromCloud = false;
 
-async function syncWithGoogleSheetsIfConfigured(force = false) {
+async function syncWithGoogleSheetsIfConfigured(force = false, customSpreadsheetId = null, customCredentials = null) {
     const cfg = googleSheets.getConfig();
-    if (!cfg.is_setup_completed || !cfg.spreadsheetId) {
+    const spreadsheetId = customSpreadsheetId || cfg.spreadsheetId;
+    if (!spreadsheetId) {
         return null;
     }
 
@@ -288,8 +289,8 @@ async function syncWithGoogleSheetsIfConfigured(force = false) {
 
     isSyncingFromCloud = true;
     try {
-        console.log('[Google Sheets Auto-Sync] Đang nạp dữ liệu mới nhất từ Google Sheets...');
-        const cloudData = await googleSheets.importAllFromGoogleSheets();
+        console.log(`[Google Sheets Auto-Sync] Đang nạp dữ liệu từ Google Sheets (${spreadsheetId.slice(0, 8)}...)...`);
+        const cloudData = await googleSheets.importAllFromGoogleSheets(spreadsheetId, customCredentials);
         if (cloudData && cloudData.tables && Object.keys(cloudData.tables).length > 0) {
             let current = loadDatabase();
             current.tables = { ...current.tables, ...cloudData.tables };
@@ -311,8 +312,10 @@ async function syncWithGoogleSheetsIfConfigured(force = false) {
 // Auto-sync middleware for read requests when Google Sheets is connected
 app.use(async (req, res, next) => {
     if (req.method === 'GET' && (req.path === '/api/data' || req.path === '/api/stats' || req.path === '/api/employees')) {
-        if (!inMemoryDb || (Date.now() - lastCloudSyncTime > CLOUD_CACHE_TTL_MS) || req.query.refresh === 'true') {
-            await syncWithGoogleSheetsIfConfigured(req.query.refresh === 'true');
+        const clientSheetId = req.headers['x-spreadsheet-id'] || req.query.spreadsheetId;
+        const clientCreds = req.headers['x-google-credentials'];
+        if (!inMemoryDb || (Date.now() - lastCloudSyncTime > CLOUD_CACHE_TTL_MS) || req.query.refresh === 'true' || clientSheetId) {
+            await syncWithGoogleSheetsIfConfigured(req.query.refresh === 'true', clientSheetId, clientCreds);
         }
     }
     next();
@@ -4369,11 +4372,13 @@ app.post('/api/sheets/pull-from-cloud', async (req, res) => {
 
 // Check setup status
 app.get('/api/setup/status', (req, res) => {
+    const clientSheetId = req.headers['x-spreadsheet-id'] || req.query.spreadsheetId;
     const cfg = googleSheets.getConfig();
-    const isCompleted = Boolean(cfg.is_setup_completed && cfg.spreadsheetId);
+    const activeSheetId = clientSheetId || cfg.spreadsheetId;
+    const isCompleted = Boolean(activeSheetId && (clientSheetId || cfg.is_setup_completed));
     res.json({
         is_setup_completed: isCompleted,
-        spreadsheetId: cfg.spreadsheetId || '',
+        spreadsheetId: activeSheetId || '',
         autoSyncOnSave: cfg.autoSyncOnSave !== false
     });
 });

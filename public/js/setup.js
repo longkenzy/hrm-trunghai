@@ -371,6 +371,12 @@ const appSetup = {
       const data = await res.json();
 
       if (data.success) {
+        // Save Google Sheets config in localStorage for Serverless/Vercel persistence
+        localStorage.setItem('hrm_google_sheets_config', JSON.stringify({
+          spreadsheetId: this.spreadsheetId,
+          credentials: this.credentials
+        }));
+
         // Save initial login session for seamless entry
         if (data.admin) {
           localStorage.setItem('hrm_trunghai_user_session', JSON.stringify({
