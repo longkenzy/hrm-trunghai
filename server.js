@@ -1037,7 +1037,7 @@ app.get('/api/employees/sample-1000', (req, res) => {
 });
 
 // 2. IMPORT EMPLOYEES FROM EXCEL BATCH (WITH PRIMARY KEY DUPLICATE VALIDATION)
-app.post('/api/employees/import-excel', (req, res) => {
+app.post('/api/employees/import-excel', async (req, res) => {
     try {
         const clientSheetId = req.headers['x-spreadsheet-id'] || req.body.spreadsheetId;
         const clientCreds = req.headers['x-google-credentials'] || req.body.googleCredentials;
@@ -1856,7 +1856,22 @@ app.post('/api/employees/import-excel', (req, res) => {
             ip: req.ip
         });
 
-        saveDatabase(db, false, clientSheetId, clientCreds);
+        saveDatabase(db, true); // Save locally first
+
+        // Await batch export to Google Sheets so data is immediately persistent on cloud / Vercel
+        const targetSheetId = clientSheetId || activeClientSpreadsheetId;
+        const targetCreds = clientCreds || activeClientCredentials;
+        if (targetSheetId) {
+            try {
+                console.log(`[Google Sheets Import Sync] Đang đồng bộ batch dữ liệu nhân sự vừa nhập lên Google Sheet (${targetSheetId.slice(0, 8)}...)...`);
+                await googleSheets.exportAllToGoogleSheets(db, targetSheetId, targetCreds);
+                lastCloudSyncTime = Date.now();
+                lastLocalMutationTime = Date.now();
+                console.log('[Google Sheets Import Sync] Đồng bộ lên Google Sheet hoàn tất!');
+            } catch (syncErr) {
+                console.warn('⚠️ Lỗi đồng bộ lên Google Sheet:', syncErr.message);
+            }
+        }
 
         res.json({
             success: true,
@@ -3556,7 +3571,7 @@ app.get('/api/organization/template-excel', (req, res) => {
 });
 
 // 2. IMPORT ORGANIZATION DATA FROM EXCEL (COMPANIES, DEPARTMENTS, POSITIONS WITH STRICT RELATIONAL INTEGRITY)
-app.post('/api/organization/import-excel', (req, res) => {
+app.post('/api/organization/import-excel', async (req, res) => {
     try {
         const clientSheetId = req.headers['x-spreadsheet-id'] || req.body.spreadsheetId;
         const clientCreds = req.headers['x-google-credentials'] || req.body.googleCredentials;
@@ -3718,7 +3733,22 @@ app.post('/api/organization/import-excel', (req, res) => {
             ip: req.ip
         });
 
-        saveDatabase(db, false, clientSheetId, clientCreds);
+        saveDatabase(db, true); // Save locally first
+
+        // Await batch export to Google Sheets so data is immediately persistent on cloud / Vercel
+        const targetSheetId = clientSheetId || activeClientSpreadsheetId;
+        const targetCreds = clientCreds || activeClientCredentials;
+        if (targetSheetId) {
+            try {
+                console.log(`[Google Sheets Org Sync] Đang đồng bộ batch dữ liệu tổ chức vừa nhập lên Google Sheet (${targetSheetId.slice(0, 8)}...)...`);
+                await googleSheets.exportAllToGoogleSheets(db, targetSheetId, targetCreds);
+                lastCloudSyncTime = Date.now();
+                lastLocalMutationTime = Date.now();
+                console.log('[Google Sheets Org Sync] Đồng bộ tổ chức lên Google Sheet hoàn tất!');
+            } catch (syncErr) {
+                console.warn('⚠️ Lỗi đồng bộ tổ chức lên Google Sheet:', syncErr.message);
+            }
+        }
 
         res.json({
             success: true,

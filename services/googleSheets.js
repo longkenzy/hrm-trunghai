@@ -264,12 +264,12 @@ async function ensureSheets(sheets, spreadsheetId, requiredNames) {
 }
 
 // Export a single table to Google Sheet
-async function exportTableToGoogleSheets(tableName, rows, customSpreadsheetId) {
+async function exportTableToGoogleSheets(tableName, rows, customSpreadsheetId, customCredentials = null) {
     const cfg = getConfig();
     const spreadsheetId = customSpreadsheetId || cfg.spreadsheetId;
     if (!spreadsheetId) return false;
 
-    const sheets = getSheetsClient();
+    const sheets = getSheetsClient(customCredentials);
     await ensureSheets(sheets, spreadsheetId, [tableName]);
 
     let headers = [];
@@ -308,7 +308,7 @@ async function exportTableToGoogleSheets(tableName, rows, customSpreadsheetId) {
     return true;
 }
 
-// Export ALL tables from local DB to Google Sheets
+// Export ALL tables from local DB to Google Sheets using atomic batchUpdate (super fast & reliable)
 async function exportAllToGoogleSheets(db, customSpreadsheetId, customCredentials) {
     const cfg = getConfig();
     const spreadsheetId = customSpreadsheetId || cfg.spreadsheetId;
@@ -318,25 +318,62 @@ async function exportAllToGoogleSheets(db, customSpreadsheetId, customCredential
 
     const sheets = getSheetsClient(customCredentials);
     const tableNames = Object.keys(db.tables || {});
+    if (tableNames.length === 0) return { success: true };
+
     await ensureSheets(sheets, spreadsheetId, tableNames);
 
-    console.log(`[Google Sheets] Bắt đầu đồng bộ ${tableNames.length} bảng lên Google Sheets...`);
-    const results = [];
+    console.log(`[Google Sheets] Bắt đầu đồng bộ batch ${tableNames.length} bảng lên Google Sheets...`);
 
-    for (const tableName of tableNames) {
-        const rows = db.tables[tableName] || [];
-        try {
-            await exportTableToGoogleSheets(tableName, rows, spreadsheetId);
-            results.push({ table: tableName, rows: rows.length, success: true });
-            // Gentle delay between table writes to stay safely within Google Sheets quota limit
-            await new Promise(r => setTimeout(r, 120));
-        } catch (err) {
-            console.error(`[Google Sheets] Lỗi đồng bộ bảng "${tableName}":`, err.message);
-            results.push({ table: tableName, rows: rows.length, success: false, error: err.message });
-        }
+    // 1. Batch clear all table ranges in single HTTP request
+    try {
+        await sheets.spreadsheets.values.batchClear({
+            spreadsheetId,
+            requestBody: {
+                ranges: tableNames.map(name => `'${name}'!A1:ZZ50000`)
+            }
+        });
+    } catch (clearErr) {
+        console.warn('[Google Sheets] Batch clear warning:', clearErr.message);
     }
 
-    return { success: true, results };
+    // 2. Prepare batch data for all tables
+    const batchData = [];
+    for (const tableName of tableNames) {
+        const rows = db.tables[tableName] || [];
+        let headers = [];
+        if (rows && rows.length > 0) {
+            headers = Object.keys(rows[0]);
+        } else {
+            headers = ['id', 'status', 'note'];
+        }
+
+        const values = [
+            headers,
+            ...rows.map(row => headers.map(h => {
+                const val = row[h];
+                if (val === undefined || val === null) return '';
+                if (typeof val === 'object') return JSON.stringify(val);
+                return val;
+            }))
+        ];
+
+        batchData.push({
+            range: `'${tableName}'!A1`,
+            values
+        });
+    }
+
+    // 3. Batch write all tables in single HTTP request
+    await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+            valueInputOption: 'USER_ENTERED',
+            data: batchData
+        }
+    });
+
+    console.log(`[Google Sheets] Đồng bộ batch thành công toàn bộ ${tableNames.length} bảng lên Google Sheets.`);
+    return { success: true, count: tableNames.length };
 }
 
 // Import ALL tables from Google Sheets into local format (Optimized with batchGet)

@@ -105,8 +105,8 @@
         "account_email": "longht@trunghaico.vn",
         "role": "ADMIN",
         "account_status": "Kích hoạt",
-        "password": "$2b$10$gACgAHs317llVz7hBkSzueTGLnn6In3w1Fvzk0kANlfXI1qg4InL2",
-        "created_at": "2026-09-04T07:13:08.637Z"
+        "password": "$2b$10$XSv.yrA1Pj8MUts1XMIYcuxvqv6rMCnq8C7kxgIp5j/tv1gZ4x4Fu",
+        "created_at": "2026-09-04T07:21:41.181Z"
       },
       {
         "account_id": "ACC-ADMIN",
@@ -116,8 +116,8 @@
         "account_email": "admin@trunghai.vn",
         "role": "ADMIN",
         "account_status": "Kích hoạt",
-        "password": "$2b$10$gACgAHs317llVz7hBkSzueTGLnn6In3w1Fvzk0kANlfXI1qg4InL2",
-        "created_at": "2026-09-04T07:13:08.637Z"
+        "password": "$2b$10$XSv.yrA1Pj8MUts1XMIYcuxvqv6rMCnq8C7kxgIp5j/tv1gZ4x4Fu",
+        "created_at": "2026-09-04T07:21:41.181Z"
       }
     ],
     "12_System_Logs": [],
