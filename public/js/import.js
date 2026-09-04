@@ -158,6 +158,136 @@ const appImport = {
     }
   },
 
+  findBestEmployeeSheet(workbook) {
+    let bestSheet = workbook.SheetNames[0];
+    let maxScore = -1;
+
+    for (const sName of workbook.SheetNames) {
+      const ws = workbook.Sheets[sName];
+      if (!ws) continue;
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }).slice(0, 10);
+      let sheetScore = 0;
+
+      for (const row of rows) {
+        if (!Array.isArray(row)) continue;
+        const rowText = row.map(c => this.cleanKey(c)).join(' ');
+        let matches = 0;
+        if (rowText.includes('hovaten') || rowText.includes('hoten') || rowText.includes('fullname')) matches += 15;
+        if (rowText.includes('manhanvien') || rowText.includes('employeeid') || rowText.includes('manv')) matches += 15;
+        if (rowText.includes('phongban') || rowText.includes('donvicongtac') || rowText.includes('department')) matches += 8;
+        if (rowText.includes('chucdanh') || rowText.includes('vitricongviec') || rowText.includes('position')) matches += 8;
+        if (rowText.includes('socmnd') || rowText.includes('socccd') || rowText.includes('cccd') || rowText.includes('cmnd')) matches += 8;
+        if (rowText.includes('dtdidong') || rowText.includes('sdt') || rowText.includes('mobile') || rowText.includes('phone')) matches += 8;
+        if (rowText.includes('email') || rowText.includes('emailcoquan')) matches += 8;
+
+        if (matches > sheetScore) sheetScore = matches;
+      }
+
+      const normName = this.cleanKey(sName);
+      if (normName.includes('masterprofile') || normName.includes('00masterprofiles')) sheetScore += 25;
+      if (normName.includes('nhansu') || normName.includes('nhanvien') || normName.includes('employee')) sheetScore += 20;
+      if (normName.includes('danhsach')) sheetScore += 12;
+
+      if (sheetScore > maxScore) {
+        maxScore = sheetScore;
+        bestSheet = sName;
+      }
+    }
+
+    return bestSheet;
+  },
+
+  parseSheetWithSmartHeaders(worksheet) {
+    const rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+    if (!rawRows || rawRows.length === 0) return [];
+
+    let headerRowIdx = 0;
+    let maxScore = -1;
+
+    for (let r = 0; r < Math.min(10, rawRows.length); r++) {
+      const row = rawRows[r];
+      if (!Array.isArray(row)) continue;
+      let score = 0;
+      const text = row.map(c => this.cleanKey(c)).join(' ');
+      if (text.includes('hovaten') || text.includes('hoten') || text.includes('fullname')) score += 15;
+      if (text.includes('manhanvien') || text.includes('employeeid') || text.includes('manv')) score += 15;
+      if (text.includes('gioitinh') || text.includes('gender')) score += 8;
+      if (text.includes('phongban') || text.includes('donvi') || text.includes('department')) score += 8;
+      if (text.includes('chucdanh') || text.includes('vitri') || text.includes('position')) score += 8;
+      if (text.includes('cccd') || text.includes('cmnd')) score += 8;
+
+      if (score > maxScore) {
+        maxScore = score;
+        headerRowIdx = r;
+      }
+    }
+
+    const headers = rawRows[headerRowIdx].map(h => String(h || '').trim());
+    const dataRows = [];
+    for (let i = headerRowIdx + 1; i < rawRows.length; i++) {
+      const row = rawRows[i];
+      if (!Array.isArray(row) || row.every(c => c === '')) continue;
+      const obj = {};
+      headers.forEach((h, colIdx) => {
+        if (h) obj[h] = row[colIdx] !== undefined ? row[colIdx] : '';
+      });
+      dataRows.push(obj);
+    }
+    return dataRows;
+  },
+
+  cleanKey(str) {
+    return (str || '')
+      .toString()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '');
+  },
+
+  getField(normRow, ...aliases) {
+    for (const a of aliases) {
+      const target = this.cleanKey(a);
+      if (normRow[target] !== undefined && normRow[target] !== null && String(normRow[target]).trim() !== '') {
+        return String(normRow[target]).trim();
+      }
+    }
+    return '';
+  },
+
+  formatDate(val) {
+    if (!val) return '';
+    if (typeof val === 'number') {
+      const d = new Date(Math.round((val - 25569) * 86400 * 1000));
+      if (!isNaN(d.getTime())) {
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+        return `${day}/${month}/${year}`;
+      }
+    }
+    return String(val).trim();
+  },
+
+  onSheetChange(newSheetName) {
+    if (!this.currentWorkbook) return;
+    this.selectedSheetName = newSheetName;
+    const worksheet = this.currentWorkbook.Sheets[newSheetName];
+    if (!worksheet) return;
+
+    const jsonRows = this.parseSheetWithSmartHeaders(worksheet);
+    if (!jsonRows || jsonRows.length === 0) {
+      utils.showToast(`Sheet "${newSheetName}" không có dữ liệu!`, 'warning');
+      return;
+    }
+
+    const activeSheetEl = document.getElementById('import-active-sheet-name');
+    if (activeSheetEl) activeSheetEl.textContent = newSheetName;
+
+    this.rawJsonRows = jsonRows;
+    this.parseAndValidate(jsonRows);
+  },
+
   processExcelFile(file) {
     if (!file.name.match(/\.(xlsx|xls|csv)$/i)) {
       utils.showToast('Vui lòng chọn file định dạng Excel (.xlsx hoặc .xls)', 'warning');
@@ -168,15 +298,31 @@ const appImport = {
     reader.onload = (e) => {
       try {
         const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array', cellDates: true, dateNF: 'yyyy-mm-dd' });
+        const workbook = XLSX.read(data, { type: 'array', cellDates: false });
+        this.currentWorkbook = workbook;
 
-        // Prefer sheet named "Danh_Sach_Nhan_Su", otherwise take first sheet
-        let sheetName = workbook.SheetNames.find(s => s.toLowerCase().includes('danh_sach') || s.toLowerCase().includes('nhan_su')) || workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
+        const bestSheet = this.findBestEmployeeSheet(workbook);
+        this.selectedSheetName = bestSheet;
 
-        const jsonRows = XLSX.utils.sheet_to_json(worksheet, { defval: '', raw: false });
+        // Render sheet selector
+        const banner = document.getElementById('import-sheet-banner');
+        const activeSheetEl = document.getElementById('import-active-sheet-name');
+        const selectEl = document.getElementById('import-sheet-select');
+        const selectWrapper = document.getElementById('import-sheet-selector-wrapper');
+
+        if (banner) banner.style.display = 'flex';
+        if (activeSheetEl) activeSheetEl.textContent = bestSheet;
+        if (selectEl) {
+          selectEl.innerHTML = workbook.SheetNames.map(s => `<option value="${s}" ${s === bestSheet ? 'selected' : ''}>${s}</option>`).join('');
+        }
+        if (selectWrapper) {
+          selectWrapper.style.display = workbook.SheetNames.length > 1 ? 'flex' : 'none';
+        }
+
+        const worksheet = workbook.Sheets[bestSheet];
+        const jsonRows = this.parseSheetWithSmartHeaders(worksheet);
         if (!jsonRows || jsonRows.length === 0) {
-          utils.showToast('File Excel không có dữ liệu nhân sự!', 'warning');
+          utils.showToast(`Sheet "${bestSheet}" không có dữ liệu nhân sự!`, 'warning');
           return;
         }
 
@@ -231,19 +377,30 @@ const appImport = {
     const fileTimeCodeCounts = new Map();
 
     rawRows.forEach((row, idx) => {
-      const normalized = {};
+      const normMap = {};
       Object.keys(row).forEach(key => {
-        const cleanKey = key.replace(/\(\*\)/g, '').trim();
-        normalized[cleanKey] = row[key];
+        const ck = this.cleanKey(key);
+        if (row[key] !== undefined && row[key] !== null && String(row[key]).trim() !== '') {
+          normMap[ck] = String(row[key]).trim();
+        }
       });
 
-      const fullName = (normalized['Họ và tên'] || normalized['full_name'] || normalized['Họ tên'] || '').toString().trim();
-      if (!fullName) return; // Skip empty rows
+      let fullName = this.getField(normMap, 'Họ và tên', 'Họ và tên (*)', 'Họ tên', 'full_name', 'Tên nhân viên', 'Họ tên nhân viên', 'Full Name', 'Name', 'fullname');
+      if (!fullName) {
+        // Fallback: merge Họ / Họ và tên đệm + Tên
+        const ho = this.getField(normMap, 'Họ và tên đệm', 'Họ và đệm', 'Họ đệm', 'Họ');
+        const ten = this.getField(normMap, 'Tên');
+        if (ho || ten) {
+          fullName = `${ho} ${ten}`.trim();
+        }
+      }
 
-      const empId = (normalized['Mã nhân viên'] || normalized['employee_id'] || normalized['Mã NV'] || '').toString().trim().toUpperCase();
-      const timeAttendanceCode = (normalized['Mã chấm công'] || normalized['time_attendance_code'] || '').toString().trim();
-      const idNumber = (normalized['Số CMND'] || normalized['Số CCCD / CMND'] || normalized['Số CCCD / Hộ chiếu'] || normalized['Số CCCD'] || normalized['CCCD'] || normalized['id_number'] || '').toString().trim();
-      const email = (normalized['Email cơ quan'] || normalized['Email công việc'] || normalized['Email'] || normalized['work_email'] || '').toString().toLowerCase().trim();
+      if (!fullName) return; // Skip completely empty rows
+
+      const empId = this.getField(normMap, 'Mã nhân viên', 'Mã nhân viên (*)', 'Mã NV', 'employee_id', 'Mã số NV', 'Staff ID', 'ID').toUpperCase();
+      const timeAttendanceCode = this.getField(normMap, 'Mã chấm công', 'time_attendance_code');
+      const idNumber = this.getField(normMap, 'Số CMND', 'Số CCCD / CMND', 'Số CCCD / Hộ chiếu', 'Số CCCD', 'CCCD', 'CMND', 'id_number', 'Số định danh');
+      const email = this.getField(normMap, 'Email cơ quan', 'Email công việc', 'Email', 'work_email').toLowerCase();
 
       if (empId) {
         fileEmpIdCounts.set(empId, (fileEmpIdCounts.get(empId) || 0) + 1);
@@ -258,78 +415,78 @@ const appImport = {
         fileTimeCodeCounts.set(timeAttendanceCode, (fileTimeCodeCounts.get(timeAttendanceCode) || 0) + 1);
       }
 
-      normalizedRows.push({ rowIdx: idx + 1, normalized, empId, timeAttendanceCode, idNumber, email, fullName });
+      normalizedRows.push({ rowIdx: idx + 1, normMap, rawRow: row, empId, timeAttendanceCode, idNumber, email, fullName });
     });
 
     // 2. Comprehensive validation pass
-    normalizedRows.forEach(({ rowIdx, normalized, empId, timeAttendanceCode, idNumber, email, fullName }) => {
-      const gender = (normalized['Giới tính'] || normalized['gender'] || 'Nam').toString().trim();
-      const dob = normalized['Ngày sinh'] || normalized['Ngày sinh (DD/MM/YYYY)'] || normalized['date_of_birth'] || '';
-      const birthPlace = (normalized['Nơi sinh'] || normalized['birth_place'] || '').toString().trim();
-      const nativePlace = (normalized['Nguyên quán'] || normalized['native_place'] || '').toString().trim();
-      const ethnicity = (normalized['Dân tộc'] || normalized['ethnicity'] || 'Kinh').toString().trim();
-      const religion = (normalized['Tôn giáo'] || normalized['religion'] || 'Không').toString().trim();
-      const nationality = (normalized['Quốc tịch'] || normalized['nationality'] || 'Việt Nam').toString().trim();
-      const maritalStatus = (normalized['Tình trạng hôn nhân'] || normalized['marital_status'] || 'Độc thân').toString().trim();
-      const childrenCount = parseInt(normalized['Số con'] || normalized['children_count'] || 0, 10) || 0;
+    normalizedRows.forEach(({ rowIdx, normMap, rawRow, empId, timeAttendanceCode, idNumber, email, fullName }) => {
+      const gender = this.getField(normMap, 'Giới tính', 'Giới tính (*)', 'gender', 'Phái') || 'Nam';
+      const dob = this.formatDate(this.getField(normMap, 'Ngày sinh', 'Ngày sinh (DD/MM/YYYY)', 'date_of_birth', 'DOB'));
+      const birthPlace = this.getField(normMap, 'Nơi sinh', 'birth_place');
+      const nativePlace = this.getField(normMap, 'Nguyên quán', 'native_place');
+      const ethnicity = this.getField(normMap, 'Dân tộc', 'ethnicity') || 'Kinh';
+      const religion = this.getField(normMap, 'Tôn giáo', 'religion') || 'Không';
+      const nationality = this.getField(normMap, 'Quốc tịch', 'nationality') || 'Việt Nam';
+      const maritalStatus = this.getField(normMap, 'Tình trạng hôn nhân', 'marital_status') || 'Độc thân';
+      const childrenCount = parseInt(this.getField(normMap, 'Số con', 'children_count') || 0, 10) || 0;
 
-      const dept = (normalized['Mã đơn vị công tác'] || normalized['Đơn vị công tác'] || normalized['Mã phòng ban'] || normalized['Phòng/Ban'] || normalized['department_id'] || normalized['Phòng ban'] || '').toString().trim();
-      const pos = (normalized['Mã vị trí công việc'] || normalized['Vị trí công việc'] || normalized['Mã chức danh / Vị trí'] || normalized['Mã chức danh'] || normalized['Chức danh'] || normalized['Vị trí'] || normalized['position_id'] || '').toString().trim();
-      const jobRank = (normalized['Bậc'] || normalized['Cấp bậc nhân sự'] || normalized['Cấp bậc'] || normalized['job_rank'] || 'Bậc 3').toString().trim();
-      const professionalTitle = (normalized['Chức danh'] || normalized['Chức danh chuyên môn'] || normalized['job_title'] || '').toString().trim();
-      const workLocation = (normalized['Địa điểm làm việc'] || normalized['work_location'] || 'Trụ sở Tổng công ty - Tòa nhà Trung Hải, Hà Nội').toString().trim();
-      const workArea = (normalized['Khu vực làm việc'] || normalized['Khối / Khu vực làm việc'] || normalized['Khối làm việc'] || normalized['work_area'] || 'Khối Văn phòng Tổng công ty').toString().trim();
-      const directMgrId = (normalized['Mã quản lý trực tiếp'] || normalized['direct_manager_id'] || '').toString().trim();
-      const directMgrName = (normalized['Quản lý trực tiếp'] || normalized['Họ tên quản lý trực tiếp'] || normalized['direct_manager_name'] || '').toString().trim();
-      const indirectMgrId = (normalized['Mã quản lý gián tiếp'] || normalized['indirect_manager_id'] || '').toString().trim();
-      const indirectMgrName = (normalized['Quản lý gián tiếp'] || normalized['Họ tên quản lý gián tiếp'] || normalized['indirect_manager_name'] || '').toString().trim();
+      const dept = this.getField(normMap, 'Mã đơn vị công tác', 'Đơn vị công tác', 'Mã phòng ban', 'Phòng/Ban', 'department_id', 'Phòng ban', 'Bộ phận', 'Đơn vị');
+      const pos = this.getField(normMap, 'Mã vị trí công việc', 'Vị trí công việc', 'Mã chức danh / Vị trí', 'Mã chức danh', 'Chức danh', 'Vị trí', 'position_id', 'Chức vụ');
+      const jobRank = this.getField(normMap, 'Bậc', 'Cấp bậc nhân sự', 'Cấp bậc', 'job_rank') || 'Bậc 3';
+      const professionalTitle = this.getField(normMap, 'Chức danh', 'Chức danh chuyên môn', 'job_title') || pos || 'Chuyên viên';
+      const workLocation = this.getField(normMap, 'Địa điểm làm việc', 'work_location') || 'Trụ sở Tổng công ty - Tòa nhà Trung Hải, Hà Nội';
+      const workArea = this.getField(normMap, 'Khu vực làm việc', 'Khối / Khu vực làm việc', 'Khối làm việc', 'work_area') || 'Khối Văn phòng Tổng công ty';
+      const directMgrId = this.getField(normMap, 'Mã quản lý trực tiếp', 'direct_manager_id');
+      const directMgrName = this.getField(normMap, 'Quản lý trực tiếp', 'Họ tên quản lý trực tiếp', 'direct_manager_name');
+      const indirectMgrId = this.getField(normMap, 'Mã quản lý gián tiếp', 'indirect_manager_id');
+      const indirectMgrName = this.getField(normMap, 'Quản lý gián tiếp', 'Họ tên quản lý gián tiếp', 'indirect_manager_name');
 
-      const laborNature = (normalized['Tính chất lao động'] || normalized['Tính chất'] || normalized['labor_nature'] || 'Chính thức').toString().trim();
-      const status = (normalized['Trạng thái lao động'] || normalized['Trạng thái làm việc'] || normalized['Trạng thái'] || normalized['employment_status'] || 'Đang làm việc').toString().trim();
-      const startDate = normalized['Ngày bắt đầu làm việc'] || normalized['Ngày thử việc'] || normalized['Ngày học việc'] || normalized['Ngày chính thức'] || normalized['Ngày vào làm'] || normalized['start_date'] || '';
-      const endDate = normalized['Ngày hết hiệu lực'] || normalized['Ngày kết thúc (HĐ/Nghỉ)'] || normalized['Ngày kết thúc'] || normalized['end_date'] || 'Không xác định';
-      const contractType = (normalized['Loại hợp đồng'] || normalized['contract_type'] || 'Hợp đồng lao động không xác định thời hạn').toString().trim();
-      const trialStartDate = normalized['Ngày thử việc'] || normalized['Ngày bắt đầu thử việc'] || normalized['trial_start_date'] || startDate;
-      const officialDate = normalized['Ngày chính thức'] || normalized['Ngày ký HĐ chính thức'] || normalized['official_date'] || startDate;
+      const laborNature = this.getField(normMap, 'Tính chất lao động', 'Tính chất', 'labor_nature') || 'Chính thức';
+      const status = this.getField(normMap, 'Trạng thái lao động', 'Trạng thái làm việc', 'Trạng thái', 'employment_status') || 'Đang làm việc';
+      const startDate = this.formatDate(this.getField(normMap, 'Ngày bắt đầu làm việc', 'Ngày thử việc', 'Ngày học việc', 'Ngày chính thức', 'Ngày vào làm', 'start_date')) || new Date().toISOString().split('T')[0];
+      const endDate = this.formatDate(this.getField(normMap, 'Ngày hết hiệu lực', 'Ngày kết thúc (HĐ/Nghỉ)', 'Ngày kết thúc', 'end_date')) || 'Không xác định';
+      const contractType = this.getField(normMap, 'Loại hợp đồng', 'contract_type') || 'Hợp đồng lao động không xác định thời hạn';
+      const trialStartDate = this.formatDate(this.getField(normMap, 'Ngày thử việc', 'Ngày bắt đầu thử việc', 'trial_start_date')) || startDate;
+      const officialDate = this.formatDate(this.getField(normMap, 'Ngày chính thức', 'Ngày ký HĐ chính thức', 'official_date')) || startDate;
 
-      const phone = (normalized['ĐT di động'] || normalized['Số ĐT di động'] || normalized['Số điện thoại'] || normalized['Điện thoại'] || normalized['mobile_phone'] || '').toString().trim();
-      const homePhone = (normalized['ĐT nhà riêng'] || normalized['Số ĐT bàn / Khác'] || normalized['Số ĐT bàn'] || normalized['home_phone'] || '').toString().trim();
-      const personalEmail = (normalized['Email cá nhân'] || normalized['personal_email'] || '').toString().trim();
-      const permAddress = (normalized['Hộ khẩu thường trú'] || normalized['Địa chỉ thường trú'] || normalized['Thường trú'] || normalized['permanent_address_full'] || '').toString().trim();
-      const currAddress = (normalized['Chỗ ở hiện nay'] || normalized['Địa chỉ tạm trú / Hiện tại'] || normalized['Địa chỉ hiện tại'] || normalized['Địa chỉ tạm trú'] || normalized['current_address_full'] || permAddress).toString().trim();
+      const phone = this.getField(normMap, 'ĐT di động', 'Số ĐT di động', 'Số điện thoại', 'Điện thoại', 'mobile_phone', 'SĐT');
+      const homePhone = this.getField(normMap, 'ĐT nhà riêng', 'Số ĐT bàn / Khác', 'Số ĐT bàn', 'home_phone');
+      const personalEmail = this.getField(normMap, 'Email cá nhân', 'personal_email');
+      const permAddress = this.getField(normMap, 'Hộ khẩu thường trú', 'Địa chỉ thường trú', 'Thường trú', 'permanent_address_full');
+      const currAddress = this.getField(normMap, 'Chỗ ở hiện nay', 'Địa chỉ tạm trú / Hiện tại', 'Địa chỉ hiện tại', 'Địa chỉ tạm trú', 'current_address_full') || permAddress;
 
-      const idIssueDate = normalized['Ngày cấp giấy tờ'] || normalized['Ngày cấp CCCD (DD/MM/YYYY)'] || normalized['Ngày cấp CCCD'] || normalized['Ngày cấp'] || normalized['id_issue_date'] || '';
-      const idIssuePlace = (normalized['Nơi cấp giấy tờ'] || normalized['Nơi cấp CCCD'] || normalized['Nơi cấp'] || normalized['id_issue_place'] || 'Cục Cảnh sát Quản lý hành chính về trật tự xã hội').toString().trim();
-      const idExpiryDate = normalized['Ngày hết hạn giấy tờ'] || normalized['Ngày hết hạn CCCD'] || normalized['id_expiry_date'] || '';
-      const passportNumber = (normalized['Số Hộ chiếu'] || normalized['Số hộ chiếu (Passport)'] || normalized['Số hộ chiếu'] || normalized['passport_number'] || '').toString().trim();
-      const passportIssueDate = normalized['Ngày cấp Hộ chiếu'] || normalized['Ngày cấp hộ chiếu'] || normalized['passport_issue_date'] || '';
-      const taxCode = (normalized['MST cá nhân'] || normalized['Mã số thuế cá nhân'] || normalized['Mã số thuế'] || normalized['tax_code'] || '').toString().trim();
+      const idIssueDate = this.formatDate(this.getField(normMap, 'Ngày cấp giấy tờ', 'Ngày cấp CCCD (DD/MM/YYYY)', 'Ngày cấp CCCD', 'Ngày cấp', 'id_issue_date'));
+      const idIssuePlace = this.getField(normMap, 'Nơi cấp giấy tờ', 'Nơi cấp CCCD', 'Nơi cấp', 'id_issue_place') || 'Cục Cảnh sát Quản lý hành chính về trật tự xã hội';
+      const idExpiryDate = this.formatDate(this.getField(normMap, 'Ngày hết hạn giấy tờ', 'Ngày hết hạn CCCD', 'id_expiry_date'));
+      const passportNumber = this.getField(normMap, 'Số Hộ chiếu', 'Số hộ chiếu (Passport)', 'Số hộ chiếu', 'passport_number');
+      const passportIssueDate = this.formatDate(this.getField(normMap, 'Ngày cấp Hộ chiếu', 'Ngày cấp hộ chiếu', 'passport_issue_date'));
+      const taxCode = this.getField(normMap, 'MST cá nhân', 'Mã số thuế cá nhân', 'Mã số thuế', 'tax_code');
 
-      const salaryGrade = parseInt(normalized['Bậc lương'] || normalized['salary_grade'] || 3, 10) || 3;
-      const baseSalary = parseFloat((normalized['Lương cơ bản'] || normalized['Lương cơ bản (VNĐ)'] || normalized['base_salary'] || '0').toString().replace(/[^0-9.-]+/g, '')) || 0;
-      const totalSalary = parseFloat((normalized['Tổng lương'] || normalized['Tổng lương / Thu nhập (VNĐ)'] || normalized['total_salary'] || '0').toString().replace(/[^0-9.-]+/g, '')) || 0;
-      const insuranceSalary = parseFloat((normalized['Lương đóng BH'] || normalized['Lương đóng BHXH (VNĐ)'] || normalized['Lương đóng BHXH'] || normalized['insurance_salary'] || '0').toString().replace(/[^0-9.-]+/g, '')) || 0;
-      const bankAccount = (normalized['TK ngân hàng'] || normalized['Số tài khoản ngân hàng'] || normalized['Số tài khoản'] || normalized['STK'] || normalized['bank_account_number'] || '').toString().trim();
-      const bankName = (normalized['Ngân hàng'] || normalized['Tên ngân hàng'] || normalized['bank_name'] || 'Vietcombank').toString().trim();
-      const bankBranch = (normalized['Chi nhánh'] || normalized['Chi nhánh ngân hàng'] || normalized['bank_branch'] || 'Chi nhánh Hà Nội').toString().trim();
+      const salaryGrade = parseInt(this.getField(normMap, 'Bậc lương', 'salary_grade') || 3, 10) || 3;
+      const baseSalary = parseFloat((this.getField(normMap, 'Lương cơ bản', 'Lương cơ bản (VNĐ)', 'base_salary') || '0').replace(/[^0-9.-]+/g, '')) || 0;
+      const totalSalary = parseFloat((this.getField(normMap, 'Tổng lương', 'Tổng lương / Thu nhập (VNĐ)', 'total_salary') || '0').replace(/[^0-9.-]+/g, '')) || 0;
+      const insuranceSalary = parseFloat((this.getField(normMap, 'Lương đóng BH', 'Lương đóng BHXH (VNĐ)', 'Lương đóng BHXH', 'insurance_salary') || '0').replace(/[^0-9.-]+/g, '')) || 0;
+      const bankAccount = this.getField(normMap, 'TK ngân hàng', 'Số tài khoản ngân hàng', 'Số tài khoản', 'STK', 'bank_account_number');
+      const bankName = this.getField(normMap, 'Ngân hàng', 'Tên ngân hàng', 'bank_name') || 'Vietcombank';
+      const bankBranch = this.getField(normMap, 'Chi nhánh', 'Chi nhánh ngân hàng', 'bank_branch') || 'Chi nhánh Hà Nội';
 
-      const hasInsurance = (normalized['Tham gia bảo hiểm'] || normalized['Tham gia BHXH'] || normalized['has_insurance'] || 'Có').toString().trim();
-      const socialInsuranceBook = (normalized['Số sổ BHXH'] || normalized['Mã số BHXH'] || normalized['Số sổ / Mã số BHXH'] || normalized['social_insurance_book_no'] || '').toString().trim();
-      const insuranceJoinDate = normalized['Ngày tham gia BH'] || normalized['Ngày tham gia BHXH'] || normalized['insurance_join_date'] || startDate;
-      const hospitalRegistered = (normalized['Nơi đăng ký KCB'] || normalized['Nơi ĐK khám chữa bệnh ban đầu'] || normalized['Nơi ĐK KCB ban đầu'] || normalized['hospital_registered'] || 'Bệnh viện Bạch Mai - Hà Nội').toString().trim();
-      const unionMember = (normalized['Tham gia công đoàn'] || normalized['Đoàn viên công đoàn'] || normalized['union_member'] || 'Đoàn viên').toString().trim();
+      const hasInsurance = this.getField(normMap, 'Tham gia bảo hiểm', 'Tham gia BHXH', 'has_insurance') || 'Có';
+      const socialInsuranceBook = this.getField(normMap, 'Số sổ BHXH', 'Mã số BHXH', 'Số sổ / Mã số BHXH', 'social_insurance_book_no');
+      const insuranceJoinDate = this.formatDate(this.getField(normMap, 'Ngày tham gia BH', 'Ngày tham gia BHXH', 'insurance_join_date')) || startDate;
+      const hospitalRegistered = this.getField(normMap, 'Nơi đăng ký KCB', 'Nơi ĐK khám chữa bệnh ban đầu', 'Nơi ĐK KCB ban đầu', 'hospital_registered') || 'Bệnh viện Bạch Mai - Hà Nội';
+      const unionMember = this.getField(normMap, 'Tham gia công đoàn', 'Đoàn viên công đoàn', 'union_member') || 'Đoàn viên';
 
-      const eduLevel = (normalized['Trình độ đào tạo'] || normalized['Trình độ học vấn'] || normalized['Trình độ'] || normalized['education_level'] || 'Đại học').toString().trim();
-      const degreeType = (normalized['Hình thức đào tạo'] || normalized['degree_type'] || 'Chính quy').toString().trim();
-      const institution = (normalized['Nơi đào tạo'] || normalized['Trường / Cơ sở đào tạo'] || normalized['Trường'] || normalized['institution'] || 'Đại học').toString().trim();
-      const eduMajor = (normalized['Chuyên ngành'] || normalized['Chuyên ngành đào tạo'] || normalized['major'] || '').toString().trim();
-      const gradYear = parseInt(normalized['Năm tốt nghiệp'] || normalized['graduation_year'] || 2020, 10) || 2020;
-      const gradClassification = (normalized['Xếp loại'] || normalized['Xếp loại tốt nghiệp'] || normalized['classification'] || 'Khá').toString().trim();
-      const otherCerts = (normalized['Bằng cấp chuyên môn khác & Chứng chỉ'] || normalized['Bằng cấp khác'] || normalized['other_certificates'] || '').toString().trim();
+      const eduLevel = this.getField(normMap, 'Trình độ đào tạo', 'Trình độ học vấn', 'Trình độ', 'education_level') || 'Đại học';
+      const degreeType = this.getField(normMap, 'Hình thức đào tạo', 'degree_type') || 'Chính quy';
+      const institution = this.getField(normMap, 'Nơi đào tạo', 'Trường / Cơ sở đào tạo', 'Trường', 'institution') || 'Đại học';
+      const eduMajor = this.getField(normMap, 'Chuyên ngành', 'Chuyên ngành đào tạo', 'major');
+      const gradYear = parseInt(this.getField(normMap, 'Năm tốt nghiệp', 'graduation_year') || 2020, 10) || 2020;
+      const gradClassification = this.getField(normMap, 'Xếp loại', 'Xếp loại tốt nghiệp', 'classification') || 'Khá';
+      const otherCerts = this.getField(normMap, 'Bằng cấp chuyên môn khác & Chứng chỉ', 'Bằng cấp khác', 'other_certificates');
 
-      const emergName = (normalized['Họ và tên (LHKC)'] || normalized['Họ tên người liên hệ khẩn cấp'] || normalized['Người liên hệ khẩn cấp'] || normalized['Người khẩn cấp'] || normalized['emergency_name'] || '').toString().trim();
-      const emergRelation = (normalized['Quan hệ (LHKC)'] || normalized['Mối quan hệ khẩn cấp'] || normalized['Quan hệ khẩn cấp'] || normalized['Quan hệ'] || normalized['emergency_relation'] || 'Người thân').toString().trim();
-      const emergPhone = (normalized['ĐT di động (LHKC)'] || normalized['Số ĐT khẩn cấp'] || normalized['SĐT khẩn cấp'] || normalized['emergency_phone'] || '').toString().trim();
+      const emergName = this.getField(normMap, 'Họ và tên (LHKC)', 'Họ tên người liên hệ khẩn cấp', 'Người liên hệ khẩn cấp', 'Người khẩn cấp', 'emergency_name');
+      const emergRelation = this.getField(normMap, 'Quan hệ (LHKC)', 'Mối quan hệ khẩn cấp', 'Quan hệ khẩn cấp', 'Quan hệ', 'emergency_relation') || 'Người thân';
+      const emergPhone = this.getField(normMap, 'ĐT di động (LHKC)', 'Số ĐT khẩn cấp', 'SĐT khẩn cấp', 'emergency_phone');
 
       const errors = [];
       const warnings = [];
@@ -637,13 +794,33 @@ const appImport = {
     }
 
     try {
+      const apiHeaders = (typeof appData !== 'undefined' && typeof appData.getApiHeaders === 'function')
+        ? appData.getApiHeaders()
+        : {};
+
+      let clientSpreadsheetId = '';
+      let clientCredentials = null;
+      try {
+        const stored = localStorage.getItem('hrm_google_sheets_config');
+        if (stored) {
+          const cfg = JSON.parse(stored);
+          clientSpreadsheetId = cfg.spreadsheetId || '';
+          clientCredentials = cfg.credentials || null;
+        }
+      } catch (e) {}
+
       const res = await fetch('/api/employees/import-excel', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...apiHeaders
+        },
         body: JSON.stringify({
           employees: toImport,
           overwrite: overwrite,
           skip_errors: chkSkipErrors,
+          spreadsheetId: clientSpreadsheetId,
+          googleCredentials: clientCredentials,
           operator_id: appAuth.currentUser?.employee_id || 'TH-0001',
           operator_name: appAuth.currentUser?.full_name || 'Admin',
           operator_role: appAuth.currentUser?.role || 'ADMIN'

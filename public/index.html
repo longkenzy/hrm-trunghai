@@ -2080,6 +2080,18 @@
       <!-- Step 2: Preview & Validation Container (Shown when file is parsed) -->
       <div id="import-preview-container" style="display: none;">
         
+        <!-- Sheet Selection Notification / Bar -->
+        <div id="import-sheet-banner" style="display: none; align-items: center; justify-content: space-between; background: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 4px; padding: 8px 14px; margin-bottom: 12px; font-size: 12px; color: #1E40AF; flex-wrap: wrap; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-table-cells" style="color: #2563EB;"></i>
+            <span>Đang đọc dữ liệu từ sheet: <strong id="import-active-sheet-name"></strong></span>
+          </div>
+          <div id="import-sheet-selector-wrapper" style="display: flex; align-items: center; gap: 6px;">
+            <label for="import-sheet-select" style="margin: 0; font-weight: 600;">Đổi sheet:</label>
+            <select id="import-sheet-select" onchange="appImport.onSheetChange(this.value)" class="form-control form-control-sm" style="height: 28px; font-size: 11.5px; width: auto; min-width: 150px; padding: 2px 8px; cursor: pointer;"></select>
+          </div>
+        </div>
+
         <!-- Controls & Options Bar -->
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px; background: #F8FAFC; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 4px;">
           <div id="import-stat-summary"></div>

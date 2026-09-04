@@ -62,6 +62,23 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Global Client Cloud Session tracker (for Serverless Vercel multi-tenant & Google Sheets sync)
+let activeClientSpreadsheetId = '';
+let activeClientCredentials = null;
+let lastLocalMutationTime = 0;
+
+app.use((req, res, next) => {
+    const sheetId = req.headers['x-spreadsheet-id'] || req.query.spreadsheetId || (req.body && req.body.spreadsheetId);
+    const creds = req.headers['x-google-credentials'] || (req.body && req.body.googleCredentials);
+    if (sheetId && typeof sheetId === 'string' && sheetId.trim()) {
+        activeClientSpreadsheetId = sheetId.trim();
+    }
+    if (creds) {
+        activeClientCredentials = creds;
+    }
+    next();
+});
+
 // ==========================================
 // 2. SECURITY & AUTH HELPERS
 // ==========================================
@@ -209,9 +226,13 @@ function syncToExcelFile(db) {
 }
 
 // Helper to save DB (Serverless-safe with in-memory and /tmp fallback)
-function saveDatabase(data, skipGoogleSync = false) {
+function saveDatabase(data, skipGoogleSync = false, clientSpreadsheetId = null, clientCredentials = null) {
     inMemoryDb = data;
     let saved = false;
+
+    // Track local mutation timestamp to protect recent writes from being overwritten by cloud pulls
+    lastLocalMutationTime = Date.now();
+    lastCloudSyncTime = Date.now();
 
     // 1. Try saving to project root (works on local development / VPS)
     try {
@@ -232,8 +253,10 @@ function saveDatabase(data, skipGoogleSync = false) {
     } catch (e) {}
 
     if (!skipGoogleSync) {
+        const targetSheetId = clientSpreadsheetId || activeClientSpreadsheetId;
+        const targetCreds = clientCredentials || activeClientCredentials;
         try {
-            googleSheets.triggerBackgroundSync(data);
+            googleSheets.triggerBackgroundSync(data, targetSheetId, targetCreds);
         } catch (e) {}
     }
 
@@ -272,12 +295,18 @@ let isSyncingFromCloud = false;
 
 async function syncWithGoogleSheetsIfConfigured(force = false, customSpreadsheetId = null, customCredentials = null) {
     const cfg = googleSheets.getConfig();
-    const spreadsheetId = customSpreadsheetId || cfg.spreadsheetId;
+    const spreadsheetId = customSpreadsheetId || activeClientSpreadsheetId || cfg.spreadsheetId;
     if (!spreadsheetId) {
         return null;
     }
 
     const now = Date.now();
+
+    // CRITICAL: NEVER overwrite local data if mutated recently (unless explicitly forced)
+    if (!force && lastLocalMutationTime > 0 && (now - lastLocalMutationTime < 60000)) {
+        return inMemoryDb;
+    }
+
     // Use cached in-memory database if still valid
     if (!force && inMemoryDb && (now - lastCloudSyncTime < CLOUD_CACHE_TTL_MS)) {
         return inMemoryDb;
@@ -290,7 +319,7 @@ async function syncWithGoogleSheetsIfConfigured(force = false, customSpreadsheet
     isSyncingFromCloud = true;
     try {
         console.log(`[Google Sheets Auto-Sync] Đang nạp dữ liệu từ Google Sheets (${spreadsheetId.slice(0, 8)}...)...`);
-        const cloudData = await googleSheets.importAllFromGoogleSheets(spreadsheetId, customCredentials);
+        const cloudData = await googleSheets.importAllFromGoogleSheets(spreadsheetId, customCredentials || activeClientCredentials);
         if (cloudData && cloudData.tables && Object.keys(cloudData.tables).length > 0) {
             let current = loadDatabase();
             current.tables = { ...current.tables, ...cloudData.tables };
@@ -312,10 +341,15 @@ async function syncWithGoogleSheetsIfConfigured(force = false, customSpreadsheet
 // Auto-sync middleware for read requests when Google Sheets is connected
 app.use(async (req, res, next) => {
     if (req.method === 'GET' && (req.path === '/api/data' || req.path === '/api/stats' || req.path === '/api/employees')) {
-        const clientSheetId = req.headers['x-spreadsheet-id'] || req.query.spreadsheetId;
-        const clientCreds = req.headers['x-google-credentials'];
-        if (!inMemoryDb || (Date.now() - lastCloudSyncTime > CLOUD_CACHE_TTL_MS) || req.query.refresh === 'true' || clientSheetId) {
-            await syncWithGoogleSheetsIfConfigured(req.query.refresh === 'true', clientSheetId, clientCreds);
+        const clientSheetId = req.headers['x-spreadsheet-id'] || req.query.spreadsheetId || activeClientSpreadsheetId;
+        const clientCreds = req.headers['x-google-credentials'] || activeClientCredentials;
+        const isForce = req.query.refresh === 'true';
+        const isColdStart = !inMemoryDb;
+        const isCacheExpired = (Date.now() - lastCloudSyncTime > CLOUD_CACHE_TTL_MS);
+        const isSafeFromLocalMutation = (Date.now() - lastLocalMutationTime > 60000);
+
+        if ((isColdStart || isCacheExpired || isForce) && (isSafeFromLocalMutation || isColdStart || isForce)) {
+            await syncWithGoogleSheetsIfConfigured(isForce, clientSheetId, clientCreds);
         }
     }
     next();
@@ -1005,6 +1039,11 @@ app.get('/api/employees/sample-1000', (req, res) => {
 // 2. IMPORT EMPLOYEES FROM EXCEL BATCH (WITH PRIMARY KEY DUPLICATE VALIDATION)
 app.post('/api/employees/import-excel', (req, res) => {
     try {
+        const clientSheetId = req.headers['x-spreadsheet-id'] || req.body.spreadsheetId;
+        const clientCreds = req.headers['x-google-credentials'] || req.body.googleCredentials;
+        if (clientSheetId) activeClientSpreadsheetId = clientSheetId;
+        if (clientCreds) activeClientCredentials = clientCreds;
+
         const db = loadDatabase();
         const { employees: importedList, overwrite, skip_errors, operator_id, operator_name, operator_role } = req.body;
 
@@ -1817,7 +1856,7 @@ app.post('/api/employees/import-excel', (req, res) => {
             ip: req.ip
         });
 
-        saveDatabase(db);
+        saveDatabase(db, false, clientSheetId, clientCreds);
 
         res.json({
             success: true,
@@ -3519,6 +3558,11 @@ app.get('/api/organization/template-excel', (req, res) => {
 // 2. IMPORT ORGANIZATION DATA FROM EXCEL (COMPANIES, DEPARTMENTS, POSITIONS WITH STRICT RELATIONAL INTEGRITY)
 app.post('/api/organization/import-excel', (req, res) => {
     try {
+        const clientSheetId = req.headers['x-spreadsheet-id'] || req.body.spreadsheetId;
+        const clientCreds = req.headers['x-google-credentials'] || req.body.googleCredentials;
+        if (clientSheetId) activeClientSpreadsheetId = clientSheetId;
+        if (clientCreds) activeClientCredentials = clientCreds;
+
         const db = loadDatabase();
         if (!db.tables['00_Companies']) db.tables['00_Companies'] = [];
         if (!db.tables['01_Departments']) db.tables['01_Departments'] = [];
@@ -3674,7 +3718,7 @@ app.post('/api/organization/import-excel', (req, res) => {
             ip: req.ip
         });
 
-        saveDatabase(db);
+        saveDatabase(db, false, clientSheetId, clientCreds);
 
         res.json({
             success: true,

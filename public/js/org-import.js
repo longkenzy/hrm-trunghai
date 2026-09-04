@@ -577,14 +577,34 @@ const appOrgImport = {
         ? appAuth.getCurrentUser()
         : { employee_id: 'TH-0001', full_name: 'Huỳnh Thanh Long', role: 'ADMIN' };
 
+      const apiHeaders = (typeof appData !== 'undefined' && typeof appData.getApiHeaders === 'function')
+        ? appData.getApiHeaders()
+        : {};
+
+      let clientSpreadsheetId = '';
+      let clientCredentials = null;
+      try {
+        const stored = localStorage.getItem('hrm_google_sheets_config');
+        if (stored) {
+          const cfg = JSON.parse(stored);
+          clientSpreadsheetId = cfg.spreadsheetId || '';
+          clientCredentials = cfg.credentials || null;
+        }
+      } catch (e) {}
+
       const res = await fetch('/api/organization/import-excel', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...apiHeaders
+        },
         body: JSON.stringify({
           companies: this.validCompanies,
           departments: this.validDepartments,
           positions: this.validPositions,
           overwrite,
+          spreadsheetId: clientSpreadsheetId,
+          googleCredentials: clientCredentials,
           operator_id: user?.employee_id || 'TH-0001',
           operator_name: user?.full_name || 'Huỳnh Thanh Long',
           operator_role: user?.role || 'ADMIN'

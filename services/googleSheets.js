@@ -424,17 +424,18 @@ async function importAllFromGoogleSheets(customSpreadsheetId, customCredentials)
 let syncTimer = null;
 let lastDbSnapshot = null;
 
-function triggerBackgroundSync(db) {
+function triggerBackgroundSync(db, customSpreadsheetId = null, customCredentials = null) {
     lastDbSnapshot = db;
     if (syncTimer) clearTimeout(syncTimer);
     syncTimer = setTimeout(async () => {
         const cfg = getConfig();
-        if (!cfg.autoSyncOnSave || !cfg.spreadsheetId) return;
+        const activeSheetId = customSpreadsheetId || cfg.spreadsheetId;
+        if (!activeSheetId || cfg.autoSyncOnSave === false) return;
 
         try {
-            console.log('[Google Sheets] Đang đồng bộ nền lên Google Sheet...');
+            console.log(`[Google Sheets] Đang đồng bộ nền lên Google Sheet (${activeSheetId.slice(0, 8)}...)...`);
             if (lastDbSnapshot) {
-                await exportAllToGoogleSheets(lastDbSnapshot);
+                await exportAllToGoogleSheets(lastDbSnapshot, activeSheetId, customCredentials);
                 console.log('[Google Sheets] Đồng bộ nền hoàn tất.');
             }
         } catch (e) {
