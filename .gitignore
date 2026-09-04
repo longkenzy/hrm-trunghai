@@ -2,6 +2,8 @@ node_modules/
 *.temp.xlsx
 .DS_Store
 Thumbs.db
+.vercel/
+.wrangler/
 
 # Security & Private Credentials
 *.json.key

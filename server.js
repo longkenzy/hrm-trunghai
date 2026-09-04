@@ -60,22 +60,6 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Global Client Cloud Session tracker (for Serverless Vercel multi-tenant & Google Sheets sync)
-let activeClientSpreadsheetId = '';
-let activeClientCredentials = null;
-let lastLocalMutationTime = 0;
-
-app.use((req, res, next) => {
-    const sheetId = req.headers['x-spreadsheet-id'] || req.query.spreadsheetId || (req.body && req.body.spreadsheetId);
-    const creds = req.headers['x-google-credentials'] || (req.body && req.body.googleCredentials);
-    if (sheetId && typeof sheetId === 'string' && sheetId.trim()) {
-        activeClientSpreadsheetId = sheetId.trim();
-    }
-    if (creds) {
-        activeClientCredentials = creds;
-    }
-    next();
-});
 
 // ==========================================
 // 2. SECURITY & AUTH HELPERS
@@ -140,7 +124,7 @@ function optionalAuth(req, res, next) {
 const DB_PATH = path.join(__dirname, 'database_schema.json');
 const TMP_DB_PATH = path.join(os.tmpdir(), 'database_schema.json');
 
-// In-memory cache for serverless environments (e.g. Vercel)
+// In-memory cache for database
 let inMemoryDb = null;
 
 // Ensure default admin exists in database (only if no admin exists to prevent lockout)
@@ -233,7 +217,7 @@ function saveDatabase(data) {
         fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2), 'utf-8');
         saved = true;
     } catch (e) {
-        // 2. Fallback to /tmp on serverless read-only filesystem (Vercel / AWS Lambda)
+        // 2. Fallback to /tmp on read-only filesystem
         try {
             fs.writeFileSync(TMP_DB_PATH, JSON.stringify(data, null, 2), 'utf-8');
             saved = true;
