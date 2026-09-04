@@ -1,29 +1,47 @@
 // ==========================================================================
-// DEPARTMENTS, POSITIONS & CONTRACTS MODULE (QUẢN LÝ PHÒNG BAN & VỊ TRÍ)
+// ORGANIZATION MODULE: COMPANIES, DEPARTMENTS, POSITIONS & ORG CHART
+// Quản lý Cơ cấu Tổ chức: Công ty -> Phòng ban -> Chức vụ / Vị trí
 // ==========================================================================
 
 const appOrganization = {
   initialized: false,
+  isSavingCompany: false,
   isSavingDept: false,
   isSavingPos: false,
+  selectedCompanyId: null,
   selectedDeptId: null,
   selectedPosId: null,
+  companySearchQuery: '',
   deptSearchQuery: '',
   posSearchQuery: '',
   contractSearchQuery: '',
+  deptCompanyFilter: '',
+  posDeptFilter: '',
 
   init() {
     if (!this.initialized) {
       this.attachEventListeners();
       this.initialized = true;
     }
+    this.populateFilterDropdowns();
+    this.renderCompaniesTable();
     this.renderDepartmentsTable();
     this.renderPositionsTable();
     this.renderContractsTable();
+    this.renderOrgChart();
+    this.updateAllDropdowns();
   },
 
   attachEventListeners() {
     // Search Inputs
+    const compSearch = document.getElementById('company-search-input');
+    if (compSearch) {
+      compSearch.addEventListener('input', (e) => {
+        this.companySearchQuery = e.target.value.trim().toLowerCase();
+        this.renderCompaniesTable();
+      });
+    }
+
     const deptSearch = document.getElementById('dept-search-input');
     if (deptSearch) {
       deptSearch.addEventListener('input', (e) => {
@@ -49,6 +67,11 @@ const appOrganization = {
     }
 
     // Forms Submit
+    const compForm = document.getElementById('form-company-action');
+    if (compForm) {
+      compForm.addEventListener('submit', (e) => this.saveCompany(e));
+    }
+
     const deptForm = document.getElementById('form-dept-action');
     if (deptForm) {
       deptForm.addEventListener('submit', (e) => this.saveDept(e));
@@ -60,24 +83,259 @@ const appOrganization = {
     }
   },
 
+  populateFilterDropdowns() {
+    // Dept filter by Company
+    const deptCompSelect = document.getElementById('dept-filter-company');
+    if (deptCompSelect) {
+      const current = deptCompSelect.value;
+      deptCompSelect.innerHTML = '<option value="">-- Tất cả Công Ty --</option>' +
+        (appData.companies || []).map(c => `<option value="${c.company_id}" ${c.company_id === current ? 'selected' : ''}>${c.company_name} (${c.company_id})</option>`).join('');
+    }
+  },
+
+  filterDeptByCompany(compId) {
+    this.deptCompanyFilter = compId || '';
+    this.renderDepartmentsTable();
+  },
+
   // ========================================================================
-  // 1. DEPARTMENTS TABLE & MANAGEMENT
+  // 1. COMPANIES MANAGEMENT (QUẢN LÝ CÔNG TY)
+  // ========================================================================
+  renderCompaniesTable() {
+    const tbody = document.getElementById('companies-tbody');
+    if (!tbody) return;
+
+    // Count departments per company
+    const deptCounts = {};
+    (appData.departments || []).forEach(d => {
+      const cId = d.company_id || 'TH-CORP';
+      deptCounts[cId] = (deptCounts[cId] || 0) + 1;
+    });
+
+    // Count employees per company (via employee's department)
+    const empCounts = {};
+    (appData.employees || []).forEach(e => {
+      const dept = (appData.departments || []).find(d => d.department_id === e.department_id);
+      const cId = dept ? (dept.company_id || 'TH-CORP') : 'TH-CORP';
+      empCounts[cId] = (empCounts[cId] || 0) + 1;
+    });
+
+    const filtered = (appData.companies || []).filter(c => {
+      if (!this.companySearchQuery) return true;
+      const id = (c.company_id || '').toLowerCase();
+      const name = (c.company_name || '').toLowerCase();
+      return id.includes(this.companySearchQuery) || name.includes(this.companySearchQuery);
+    });
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="5" style="text-align: center; padding: 24px; color: var(--text-muted);">
+            <i class="fa-solid fa-city" style="font-size: 24px; margin-bottom: 8px; display: block; opacity: 0.5;"></i>
+            Không tìm thấy công ty phù hợp
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    tbody.innerHTML = filtered.map(c => {
+      const numDepts = deptCounts[c.company_id] || 0;
+      const numEmps = empCounts[c.company_id] || 0;
+      return `
+        <tr>
+          <td><strong style="color: var(--primary-navy); font-family: monospace; font-size: 13px;">${c.company_id}</strong></td>
+          <td><strong style="color: var(--text-primary); font-size: 13px;">${c.company_name}</strong></td>
+          <td style="text-align: center;">
+            <span class="badge badge-navy" style="font-size: 11.5px; font-weight: 700;">
+              <i class="fa-solid fa-building"></i> ${numDepts} phòng ban
+            </span>
+          </td>
+          <td style="text-align: center;">
+            <span class="badge badge-navy" style="font-size: 11.5px; font-weight: 700;">
+              <i class="fa-solid fa-users"></i> ${numEmps} nhân sự
+            </span>
+          </td>
+          <td style="text-align: center;">
+            <div style="display: flex; justify-content: center; gap: 6px;">
+              <button class="btn btn-sm btn-secondary" onclick="appOrganization.openEditCompanyModal('${c.company_id}')" title="Chỉnh sửa công ty">
+                <i class="fa-solid fa-pen-to-square" style="color: var(--primary-navy);"></i>
+              </button>
+              <button class="btn btn-sm btn-secondary" onclick="appOrganization.deleteCompany('${c.company_id}')" title="Xóa công ty">
+                <i class="fa-solid fa-trash-can" style="color: var(--accent-red);"></i>
+              </button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  },
+
+  openAddCompanyModal() {
+    this.selectedCompanyId = null;
+    document.getElementById('company-modal-title').textContent = 'Thêm Công Ty Mới';
+    
+    const idInput = document.getElementById('company-form-id');
+    idInput.value = '';
+    idInput.disabled = false;
+    
+    document.getElementById('company-form-name').value = '';
+    document.getElementById('modal-company-form').classList.add('active');
+  },
+
+  openEditCompanyModal(compId) {
+    const comp = (appData.companies || []).find(c => c.company_id === compId);
+    if (!comp) return;
+
+    this.selectedCompanyId = compId;
+    document.getElementById('company-modal-title').textContent = `Chỉnh Sửa Công Ty (${compId})`;
+
+    const idInput = document.getElementById('company-form-id');
+    idInput.value = comp.company_id;
+    idInput.disabled = true;
+
+    document.getElementById('company-form-name').value = comp.company_name || '';
+    document.getElementById('modal-company-form').classList.add('active');
+  },
+
+  closeCompanyModal() {
+    const modal = document.getElementById('modal-company-form');
+    if (modal) modal.classList.remove('active');
+  },
+
+  async saveCompany(e) {
+    e.preventDefault();
+    if (this.isSavingCompany) return;
+
+    const id = document.getElementById('company-form-id').value.trim().toUpperCase();
+    const name = document.getElementById('company-form-name').value.trim();
+
+    if (!id || !name) {
+      utils.showToast('Vui lòng điền đầy đủ Mã công ty và Tên công ty', 'error');
+      return;
+    }
+
+    this.isSavingCompany = true;
+    const submitBtn = document.getElementById('btn-save-company');
+    if (submitBtn) submitBtn.disabled = true;
+
+    try {
+      if (this.selectedCompanyId) {
+        // UPDATE
+        const res = await fetch(`/api/companies/${this.selectedCompanyId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            company_name: name,
+            operator_id: appAuth.currentUser?.employee_id || 'TH-0001',
+            operator_name: appAuth.currentUser?.full_name || 'Admin',
+            operator_role: appAuth.currentUser?.role || 'ADMIN'
+          })
+        });
+        const json = await res.json();
+        if (json.success) {
+          const idx = appData.companies.findIndex(c => c.company_id === this.selectedCompanyId);
+          if (idx >= 0) appData.companies[idx] = json.company;
+          appData.companyMap[this.selectedCompanyId] = name;
+
+          this.updateAllDropdowns();
+          this.renderCompaniesTable();
+          this.renderDepartmentsTable();
+          this.renderOrgChart();
+          this.closeCompanyModal();
+          utils.showToast('Cập nhật công ty thành công!', 'success');
+        } else {
+          utils.showToast(json.message || 'Lỗi cập nhật công ty', 'error');
+        }
+      } else {
+        // CREATE
+        const res = await fetch('/api/companies', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            company_id: id,
+            company_name: name,
+            operator_id: appAuth.currentUser?.employee_id || 'TH-0001',
+            operator_name: appAuth.currentUser?.full_name || 'Admin',
+            operator_role: appAuth.currentUser?.role || 'ADMIN'
+          })
+        });
+        const json = await res.json();
+        if (json.success) {
+          if (!appData.companies) appData.companies = [];
+          appData.companies.push(json.company);
+          appData.companyMap[json.company.company_id] = json.company.company_name;
+
+          this.updateAllDropdowns();
+          this.renderCompaniesTable();
+          this.renderOrgChart();
+          this.closeCompanyModal();
+          utils.showToast(`Thêm mới công ty "${name}" thành công!`, 'success');
+        } else {
+          utils.showToast(json.message || 'Lỗi tạo công ty', 'error');
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      utils.showToast('Lỗi máy chủ: ' + err.message, 'error');
+    } finally {
+      this.isSavingCompany = false;
+      if (submitBtn) submitBtn.disabled = false;
+    }
+  },
+
+  async deleteCompany(compId) {
+    const comp = (appData.companies || []).find(c => c.company_id === compId);
+    if (!comp) return;
+
+    if (!confirm(`Bạn có chắc chắn muốn xóa công ty "${comp.company_name}" (${compId}) không?`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/companies/${compId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          operator_id: appAuth.currentUser?.employee_id || 'TH-0001',
+          operator_name: appAuth.currentUser?.full_name || 'Admin',
+          operator_role: appAuth.currentUser?.role || 'ADMIN'
+        })
+      });
+      const json = await res.json();
+      if (json.success) {
+        appData.companies = appData.companies.filter(c => c.company_id !== compId);
+        delete appData.companyMap[compId];
+
+        this.updateAllDropdowns();
+        this.renderCompaniesTable();
+        this.renderOrgChart();
+        utils.showToast(`Đã xóa công ty "${comp.company_name}"!`, 'success');
+      } else {
+        utils.showToast(json.message || 'Không thể xóa công ty', 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      utils.showToast('Lỗi máy chủ', 'error');
+    }
+  },
+
+  // ========================================================================
+  // 2. DEPARTMENTS MANAGEMENT (QUẢN LÝ PHÒNG BAN)
   // ========================================================================
   renderDepartmentsTable() {
     const tbody = document.getElementById('departments-tbody');
     if (!tbody) return;
 
     const deptCounts = {};
-    const activeCounts = {};
-
     (appData.employees || []).forEach(e => {
       deptCounts[e.department_id] = (deptCounts[e.department_id] || 0) + 1;
-      if (e.employment_status === 'Đang làm việc') {
-        activeCounts[e.department_id] = (activeCounts[e.department_id] || 0) + 1;
-      }
     });
 
     const filtered = (appData.departments || []).filter(d => {
+      if (this.deptCompanyFilter && (d.company_id || 'TH-CORP') !== this.deptCompanyFilter) {
+        return false;
+      }
       if (!this.deptSearchQuery) return true;
       const id = (d.department_id || '').toLowerCase();
       const name = (d.department_name || '').toLowerCase();
@@ -87,8 +345,8 @@ const appOrganization = {
     if (filtered.length === 0) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="6" style="text-align: center; padding: 24px; color: var(--text-muted);">
-            <i class="fa-solid fa-building-circle-xmark" style="font-size: 24px; margin-bottom: 8px; display: block;"></i>
+          <td colspan="5" style="text-align: center; padding: 24px; color: var(--text-muted);">
+            <i class="fa-solid fa-building-circle-xmark" style="font-size: 24px; margin-bottom: 8px; display: block; opacity: 0.5;"></i>
             Không tìm thấy phòng ban phù hợp
           </td>
         </tr>
@@ -98,25 +356,20 @@ const appOrganization = {
 
     tbody.innerHTML = filtered.map(d => {
       const count = deptCounts[d.department_id] || 0;
-      const active = activeCounts[d.department_id] || 0;
+      const compName = appData.companyMap[d.company_id] || (appData.companies && appData.companies[0]?.company_name) || 'Tổng Công Ty Trung Hải';
       return `
         <tr>
           <td><strong style="color: var(--primary-navy); font-family: monospace; font-size: 13px;">${d.department_id}</strong></td>
           <td><strong style="color: var(--text-primary); font-size: 13px;">${d.department_name}</strong></td>
+          <td><span style="font-size: 12px; color: var(--text-secondary);"><i class="fa-solid fa-city" style="color: var(--primary-navy); margin-right: 4px;"></i>${compName}</span></td>
           <td style="text-align: center;">
             <span class="badge badge-navy" style="font-size: 11.5px; font-weight: 700;">
               <i class="fa-solid fa-users"></i> ${count} nhân sự
             </span>
           </td>
           <td style="text-align: center;">
-            <span class="badge badge-active" style="font-size: 11.5px; font-weight: 700;">
-              <i class="fa-solid fa-circle-check"></i> ${active} đang làm
-            </span>
-          </td>
-          <td><span class="badge badge-active">${d.status || 'Hoạt động'}</span></td>
-          <td style="text-align: center;">
             <div style="display: flex; justify-content: center; gap: 6px;">
-              <button class="btn btn-sm btn-outline-navy" onclick="appOrganization.filterEmployeesByDept('${d.department_id}')" title="Xem danh sách nhân viên thuộc đơn vị này">
+              <button class="btn btn-sm btn-outline-navy" onclick="appOrganization.filterEmployeesByDept('${d.department_id}')" title="Xem danh sách nhân viên">
                 <i class="fa-solid fa-users"></i>
               </button>
               <button class="btn btn-sm btn-secondary" onclick="appOrganization.openEditDeptModal('${d.department_id}')" title="Chỉnh sửa phòng ban">
@@ -134,27 +387,18 @@ const appOrganization = {
 
   openAddDeptModal() {
     this.selectedDeptId = null;
-    document.getElementById('dept-modal-title').textContent = 'Thêm Phòng Ban / Đơn Vị Mới';
+    document.getElementById('dept-modal-title').textContent = 'Thêm Phòng Ban Mới';
     
     const idInput = document.getElementById('dept-form-id');
     idInput.value = '';
     idInput.disabled = false;
     
     document.getElementById('dept-form-name').value = '';
-    document.getElementById('dept-form-status').value = 'Hoạt động';
 
-    // Populate Parent Dept Dropdown
-    const parentSelect = document.getElementById('dept-form-parent');
-    if (parentSelect) {
-      parentSelect.innerHTML = '<option value="">-- Không có (Cấp cao nhất / Ban Giám Đốc) --</option>' +
-        (appData.departments || []).map(d => `<option value="${d.department_id}">${d.department_name} (${d.department_id})</option>`).join('');
-    }
-
-    // Populate Managers Dropdown
-    const mgrSelect = document.getElementById('dept-form-manager');
-    if (mgrSelect) {
-      mgrSelect.innerHTML = '<option value="">-- Chọn Trưởng phòng / Quản lý --</option>' +
-        (appData.employees || []).map(e => `<option value="${e.employee_id}">${e.full_name} (${e.employee_id})</option>`).join('');
+    // Populate Company Dropdown
+    const compSelect = document.getElementById('dept-form-company');
+    if (compSelect) {
+      compSelect.innerHTML = (appData.companies || []).map(c => `<option value="${c.company_id}">${c.company_name} (${c.company_id})</option>`).join('');
     }
 
     document.getElementById('modal-dept-form').classList.add('active');
@@ -172,20 +416,13 @@ const appOrganization = {
     idInput.disabled = true;
 
     document.getElementById('dept-form-name').value = dept.department_name || '';
-    document.getElementById('dept-form-status').value = dept.status || 'Hoạt động';
 
-    // Populate Parent Dept Dropdown (exclude current dept)
-    const parentSelect = document.getElementById('dept-form-parent');
-    if (parentSelect) {
-      parentSelect.innerHTML = '<option value="">-- Không có (Cấp cao nhất / Ban Giám Đốc) --</option>' +
-        (appData.departments || []).filter(d => d.department_id !== deptId).map(d => `<option value="${d.department_id}" ${d.department_id === dept.parent_dept_id ? 'selected' : ''}>${d.department_name} (${d.department_id})</option>`).join('');
-    }
-
-    // Populate Managers Dropdown
-    const mgrSelect = document.getElementById('dept-form-manager');
-    if (mgrSelect) {
-      mgrSelect.innerHTML = '<option value="">-- Chọn Trưởng phòng / Quản lý --</option>' +
-        (appData.employees || []).map(e => `<option value="${e.employee_id}" ${e.employee_id === dept.manager_id ? 'selected' : ''}>${e.full_name} (${e.employee_id})</option>`).join('');
+    // Populate Company Dropdown
+    const compSelect = document.getElementById('dept-form-company');
+    if (compSelect) {
+      compSelect.innerHTML = (appData.companies || []).map(c => 
+        `<option value="${c.company_id}" ${c.company_id === dept.company_id ? 'selected' : ''}>${c.company_name} (${c.company_id})</option>`
+      ).join('');
     }
 
     document.getElementById('modal-dept-form').classList.add('active');
@@ -202,9 +439,7 @@ const appOrganization = {
 
     const id = document.getElementById('dept-form-id').value.trim().toUpperCase();
     const name = document.getElementById('dept-form-name').value.trim();
-    const parentId = document.getElementById('dept-form-parent').value;
-    const managerId = document.getElementById('dept-form-manager').value;
-    const status = document.getElementById('dept-form-status').value;
+    const companyId = document.getElementById('dept-form-company')?.value || 'TH-CORP';
 
     if (!id || !name) {
       utils.showToast('Vui lòng điền đầy đủ Mã và Tên phòng ban', 'error');
@@ -223,9 +458,7 @@ const appOrganization = {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             department_name: name,
-            parent_dept_id: parentId,
-            manager_id: managerId,
-            status,
+            company_id: companyId,
             operator_id: appAuth.currentUser?.employee_id || 'TH-0001',
             operator_name: appAuth.currentUser?.full_name || 'Admin',
             operator_role: appAuth.currentUser?.role || 'ADMIN'
@@ -234,7 +467,7 @@ const appOrganization = {
         const json = await res.json();
         if (json.success) {
           const idx = appData.departments.findIndex(d => d.department_id === this.selectedDeptId);
-          if (idx >= 0) appData.departments[idx] = json.department;
+          if (idx >= 0) appData.departments[idx] = { ...appData.departments[idx], ...json.department, company_id: companyId };
           appData.deptMap[this.selectedDeptId] = name;
 
           // Update department_name on local employees list
@@ -244,6 +477,7 @@ const appOrganization = {
 
           this.updateAllDropdowns();
           this.renderDepartmentsTable();
+          this.renderOrgChart();
           this.closeDeptModal();
           utils.showToast('Cập nhật phòng ban thành công!', 'success');
         } else {
@@ -257,9 +491,7 @@ const appOrganization = {
           body: JSON.stringify({
             department_id: id,
             department_name: name,
-            parent_dept_id: parentId,
-            manager_id: managerId,
-            status,
+            company_id: companyId,
             operator_id: appAuth.currentUser?.employee_id || 'TH-0001',
             operator_name: appAuth.currentUser?.full_name || 'Admin',
             operator_role: appAuth.currentUser?.role || 'ADMIN'
@@ -267,11 +499,13 @@ const appOrganization = {
         });
         const json = await res.json();
         if (json.success) {
-          appData.departments.push(json.department);
-          appData.deptMap[json.department.department_id] = json.department.department_name;
+          const newDept = { ...json.department, company_id: companyId };
+          appData.departments.push(newDept);
+          appData.deptMap[newDept.department_id] = newDept.department_name;
 
           this.updateAllDropdowns();
           this.renderDepartmentsTable();
+          this.renderOrgChart();
           this.closeDeptModal();
           utils.showToast(`Thêm mới phòng ban ${name} thành công!`, 'success');
         } else {
@@ -312,6 +546,7 @@ const appOrganization = {
 
         this.updateAllDropdowns();
         this.renderDepartmentsTable();
+        this.renderOrgChart();
         utils.showToast(`Đã xóa phòng ban "${dept.department_name}"!`, 'success');
       } else {
         utils.showToast(json.message || 'Không thể xóa phòng ban', 'error');
@@ -323,7 +558,7 @@ const appOrganization = {
   },
 
   // ========================================================================
-  // 2. POSITIONS TABLE & MANAGEMENT
+  // 3. POSITIONS MANAGEMENT (QUẢN LÝ VỊ TRÍ)
   // ========================================================================
   renderPositionsTable() {
     const tbody = document.getElementById('positions-tbody');
@@ -344,8 +579,8 @@ const appOrganization = {
     if (filtered.length === 0) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="5" style="text-align: center; padding: 24px; color: var(--text-muted);">
-            <i class="fa-solid fa-briefcase" style="font-size: 24px; margin-bottom: 8px; display: block;"></i>
+          <td colspan="4" style="text-align: center; padding: 24px; color: var(--text-muted);">
+            <i class="fa-solid fa-briefcase" style="font-size: 24px; margin-bottom: 8px; display: block; opacity: 0.5;"></i>
             Không tìm thấy vị trí / chức danh phù hợp
           </td>
         </tr>
@@ -364,7 +599,6 @@ const appOrganization = {
               <i class="fa-solid fa-user-tag"></i> ${count} nhân sự
             </span>
           </td>
-          <td><span class="badge badge-active">${p.status || 'Hoạt động'}</span></td>
           <td style="text-align: center;">
             <div style="display: flex; justify-content: center; gap: 6px;">
               <button class="btn btn-sm btn-outline-navy" onclick="appOrganization.filterEmployeesByPosition('${p.position_id}')" title="Xem danh sách nhân sự giữ chức danh này">
@@ -385,23 +619,13 @@ const appOrganization = {
 
   openAddPosModal() {
     this.selectedPosId = null;
-    document.getElementById('pos-modal-title').textContent = 'Thêm Vị Trí / Chức Danh Mới';
+    document.getElementById('pos-modal-title').textContent = 'Thêm Vị Trí Mới';
 
     const idInput = document.getElementById('pos-form-id');
     idInput.value = '';
     idInput.disabled = false;
 
     document.getElementById('pos-form-name').value = '';
-    document.getElementById('pos-form-level').value = 'Cấp 3 - Chuyên viên / Nhân viên Nghiệp vụ';
-    document.getElementById('pos-form-status').value = 'Hoạt động';
-
-    // Populate Dept Dropdown
-    const deptSelect = document.getElementById('pos-form-dept');
-    if (deptSelect) {
-      deptSelect.innerHTML = '<option value="">-- Tất cả / Chung cho toàn công ty --</option>' +
-        (appData.departments || []).map(d => `<option value="${d.department_id}">${d.department_name}</option>`).join('');
-    }
-
     document.getElementById('modal-pos-form').classList.add('active');
   },
 
@@ -417,16 +641,6 @@ const appOrganization = {
     idInput.disabled = true;
 
     document.getElementById('pos-form-name').value = pos.position_name || '';
-    document.getElementById('pos-form-level').value = pos.level || 'Cấp 3 - Chuyên viên / Nhân viên Nghiệp vụ';
-    document.getElementById('pos-form-status').value = pos.status || 'Hoạt động';
-
-    // Populate Dept Dropdown
-    const deptSelect = document.getElementById('pos-form-dept');
-    if (deptSelect) {
-      deptSelect.innerHTML = '<option value="">-- Tất cả / Chung cho toàn công ty --</option>' +
-        (appData.departments || []).map(d => `<option value="${d.department_id}" ${d.department_id === pos.department_id ? 'selected' : ''}>${d.department_name}</option>`).join('');
-    }
-
     document.getElementById('modal-pos-form').classList.add('active');
   },
 
@@ -441,9 +655,6 @@ const appOrganization = {
 
     const id = document.getElementById('pos-form-id').value.trim().toUpperCase();
     const name = document.getElementById('pos-form-name').value.trim();
-    const deptId = document.getElementById('pos-form-dept').value;
-    const level = document.getElementById('pos-form-level').value;
-    const status = document.getElementById('pos-form-status').value;
 
     if (!id || !name) {
       utils.showToast('Vui lòng điền đầy đủ Mã và Tên vị trí', 'error');
@@ -462,9 +673,6 @@ const appOrganization = {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             position_name: name,
-            department_id: deptId,
-            level,
-            status,
             operator_id: appAuth.currentUser?.employee_id || 'TH-0001',
             operator_name: appAuth.currentUser?.full_name || 'Admin',
             operator_role: appAuth.currentUser?.role || 'ADMIN'
@@ -473,13 +681,14 @@ const appOrganization = {
         const json = await res.json();
         if (json.success) {
           const idx = appData.positions.findIndex(p => p.position_id === this.selectedPosId);
-          if (idx >= 0) appData.positions[idx] = json.position;
+          if (idx >= 0) appData.positions[idx] = { ...appData.positions[idx], ...json.position, position_name: name };
           appData.posMap[this.selectedPosId] = name;
 
           this.updateAllDropdowns();
           this.renderPositionsTable();
+          this.renderOrgChart();
           this.closePosModal();
-          utils.showToast('Cập nhật vị trí công việc thành công!', 'success');
+          utils.showToast('Cập nhật vị trí thành công!', 'success');
         } else {
           utils.showToast(json.message || 'Lỗi cập nhật vị trí', 'error');
         }
@@ -491,9 +700,6 @@ const appOrganization = {
           body: JSON.stringify({
             position_id: id,
             position_name: name,
-            department_id: deptId,
-            level,
-            status,
             operator_id: appAuth.currentUser?.employee_id || 'TH-0001',
             operator_name: appAuth.currentUser?.full_name || 'Admin',
             operator_role: appAuth.currentUser?.role || 'ADMIN'
@@ -501,11 +707,13 @@ const appOrganization = {
         });
         const json = await res.json();
         if (json.success) {
-          appData.positions.push(json.position);
-          appData.posMap[json.position.position_id] = json.position.position_name;
+          const newPos = { ...json.position, position_id: id, position_name: name };
+          appData.positions.push(newPos);
+          appData.posMap[newPos.position_id] = newPos.position_name;
 
           this.updateAllDropdowns();
           this.renderPositionsTable();
+          this.renderOrgChart();
           this.closePosModal();
           utils.showToast(`Thêm mới vị trí "${name}" thành công!`, 'success');
         } else {
@@ -546,6 +754,7 @@ const appOrganization = {
 
         this.updateAllDropdowns();
         this.renderPositionsTable();
+        this.renderOrgChart();
         utils.showToast(`Đã xóa vị trí "${pos.position_name}"!`, 'success');
       } else {
         utils.showToast(json.message || 'Không thể xóa vị trí', 'error');
@@ -557,9 +766,134 @@ const appOrganization = {
   },
 
   // ========================================================================
-  // 3. GLOBAL DROPDOWNS SYNCHRONIZER
+  // 4. SƠ ĐỒ CƠ CẤU TỔ CHỨC HIERARCHY (CÔNG TY -> PHÒNG BAN -> CHỨC VỤ)
+  // ========================================================================
+  renderOrgChart() {
+    const container = document.getElementById('org-chart-tree-container');
+    if (!container) return;
+
+    const companies = appData.companies || [];
+    const departments = appData.departments || [];
+    const positions = appData.positions || [];
+    const employees = appData.employees || [];
+
+    // Map counts
+    const deptStaffCount = {};
+    const posStaffCount = {};
+    employees.forEach(e => {
+      if (e.department_id) deptStaffCount[e.department_id] = (deptStaffCount[e.department_id] || 0) + 1;
+      if (e.position_id) posStaffCount[e.position_id] = (posStaffCount[e.position_id] || 0) + 1;
+    });
+
+    if (companies.length === 0) {
+      container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 40px;">Chưa có dữ liệu công ty</div>';
+      return;
+    }
+
+    let html = '<div class="org-tree" style="display: flex; flex-direction: column; gap: 24px;">';
+
+    companies.forEach(comp => {
+      // Find departments belonging to this company
+      const compDepts = departments.filter(d => (d.company_id || 'TH-CORP') === comp.company_id);
+      let totalCompStaff = 0;
+      compDepts.forEach(d => { totalCompStaff += (deptStaffCount[d.department_id] || 0); });
+
+      html += `
+        <div class="org-company-card" style="background: #FFFFFF; border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.04); overflow: hidden;">
+          <!-- Company Header -->
+          <div style="background: linear-gradient(135deg, #1E3A8A 0%, #0F172A 100%); color: #FFFFFF; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <div style="width: 36px; height: 36px; border-radius: 6px; background: rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; font-size: 18px;">
+                <i class="fa-solid fa-city"></i>
+              </div>
+              <div>
+                <div style="font-size: 15px; font-weight: 700; letter-spacing: 0.3px;">${comp.company_name}</div>
+                <div style="font-size: 11.5px; opacity: 0.85; font-family: monospace;">Mã: ${comp.company_id}</div>
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="badge" style="background: rgba(255,255,255,0.2); color: #FFFFFF; font-size: 11.5px; padding: 4px 10px;">
+                <i class="fa-solid fa-building"></i> ${compDepts.length} phòng ban
+              </span>
+              <span class="badge" style="background: #10B981; color: #FFFFFF; font-size: 11.5px; padding: 4px 10px;">
+                <i class="fa-solid fa-users"></i> ${totalCompStaff} nhân sự
+              </span>
+            </div>
+          </div>
+
+          <!-- Departments Grid inside Company -->
+          <div style="padding: 18px; background: #F8FAFC;">
+            ${compDepts.length === 0 ? `
+              <div style="font-size: 12.5px; color: var(--text-muted); font-style: italic; padding: 10px;">Chưa có phòng ban nào trực thuộc công ty này. Bấm "Thêm Phòng Ban" để gán.</div>
+            ` : `
+              <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px;">
+                ${compDepts.map(dept => {
+                  const numEmps = deptStaffCount[dept.department_id] || 0;
+                  // Positions in this department
+                  const deptPositions = positions.filter(p => p.department_id === dept.department_id);
+
+                  return `
+                    <div class="org-dept-card" style="background: #FFFFFF; border: 1px solid var(--border-color); border-radius: 6px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+                      <!-- Department Title -->
+                      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; border-bottom: 1px dashed var(--border-color); padding-bottom: 8px;">
+                        <div>
+                          <strong style="font-size: 13.5px; color: var(--primary-navy); display: block;">
+                            <i class="fa-solid fa-building" style="color: #2563EB; margin-right: 5px;"></i>
+                            ${dept.department_name}
+                          </strong>
+                          <span style="font-size: 11px; color: var(--text-muted); font-family: monospace;">${dept.department_id}</span>
+                        </div>
+                        <span class="badge badge-navy" style="font-size: 11px; font-weight: 700;">
+                          ${numEmps} nhân sự
+                        </span>
+                      </div>
+
+                      <!-- Positions List inside Department -->
+                      <div style="margin-top: 8px;">
+                        <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px;">
+                          Chức vụ / Vị trí (${deptPositions.length})
+                        </div>
+                        ${deptPositions.length === 0 ? `
+                          <div style="font-size: 11.5px; color: var(--text-muted); font-style: italic;">Chưa gán chức vụ cụ thể</div>
+                        ` : `
+                          <div style="display: flex; flex-direction: column; gap: 4px;">
+                            ${deptPositions.map(pos => {
+                              const posCount = posStaffCount[pos.position_id] || 0;
+                              return `
+                                <div style="display: flex; align-items: center; justify-content: space-between; background: #F1F5F9; padding: 5px 8px; border-radius: 4px; font-size: 12px;">
+                                  <span style="color: var(--text-primary); font-weight: 500;">
+                                    <i class="fa-solid fa-briefcase" style="font-size: 10px; color: #475569; margin-right: 4px;"></i>
+                                    ${pos.position_name}
+                                  </span>
+                                  <span style="font-size: 11px; color: #059669; font-weight: 700;">
+                                    ${posCount} NS
+                                  </span>
+                                </div>
+                              `;
+                            }).join('')}
+                          </div>
+                        `}
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            `}
+          </div>
+        </div>
+      `;
+    });
+
+    html += '</div>';
+    container.innerHTML = html;
+  },
+
+  // ========================================================================
+  // 5. GLOBAL DROPDOWNS SYNCHRONIZER
   // ========================================================================
   updateAllDropdowns() {
+    this.populateFilterDropdowns();
+
     // 1. Employee Form & Filters
     if (window.appEmployees && typeof appEmployees.populateFilterDropdowns === 'function') {
       appEmployees.populateFilterDropdowns();
@@ -581,6 +915,9 @@ const appOrganization = {
     }
 
     // 5. Update Sidebar Count badges
+    const sideCompCount = document.getElementById('sidebar-company-count');
+    if (sideCompCount) sideCompCount.textContent = (appData.companies || []).length;
+
     const sideDeptCount = document.getElementById('sidebar-dept-count');
     if (sideDeptCount) sideDeptCount.textContent = (appData.departments || []).length;
     
@@ -589,7 +926,7 @@ const appOrganization = {
   },
 
   // ========================================================================
-  // 4. CONTRACTS TABLE
+  // 6. CONTRACTS TABLE
   // ========================================================================
   renderContractsTable() {
     const tbody = document.getElementById('contracts-tbody');
@@ -645,7 +982,7 @@ const appOrganization = {
   },
 
   // ========================================================================
-  // 5. NAVIGATION HELPERS
+  // 7. NAVIGATION HELPERS
   // ========================================================================
   filterEmployeesByDept(deptId) {
     const navEmp = document.querySelector('.nav-item[data-view="employees"]');

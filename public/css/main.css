@@ -1814,4 +1814,25 @@ html.user-logged-in .login-screen,
   border-top: none;
 }
 
+tr.row-selected {
+  background-color: #F0F7FF !important;
+}
+
+.org-preview-tab-btn.active {
+  background: #FFFFFF !important;
+  border-color: var(--border-color) !important;
+  border-bottom: 2px solid #FFFFFF !important;
+  color: var(--primary-navy) !important;
+  border-top: 2.5px solid #10B981 !important;
+  font-weight: 700 !important;
+}
+
+.org-preview-tab-pane {
+  display: none !important;
+}
+
+.org-preview-tab-pane.active {
+  display: block !important;
+}
+
 

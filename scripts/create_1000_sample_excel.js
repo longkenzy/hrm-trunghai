@@ -7,7 +7,7 @@ const OUTPUT_EXCEL_PATH = path.join(__dirname, '..', 'Mau_1000_Nhan_Su_TRUNGHAI.
 const PUBLIC_EXCEL_PATH = path.join(__dirname, '..', 'public', 'Mau_1000_Nhan_Su_TRUNGHAI.xlsx');
 const DB_JSON_PATH = path.join(__dirname, '..', 'database_schema.json');
 
-console.log('🔄 Bắt đầu sinh 1,000 dữ liệu nhân sự mẫu chuẩn hóa đầy đủ 64 cột...');
+console.log('🔄 Bắt đầu sinh 1,000 dữ liệu nhân sự mẫu chuẩn hóa đầy đủ 115 cột...');
 
 // Load existing DB for reference tables (01_Departments, 02_Positions)
 let originalDb = { tables: {} };
@@ -125,77 +125,126 @@ function removeVietnameseTones(str) {
     return str;
 }
 
-const rows = [];
-
-// Header Row (64 Columns)
-const headers = [
-    'Mã nhân viên (*)',
-    'Mã chấm công',
-    'Họ và tên (*)',
-    'Giới tính (*)',
-    'Ngày sinh (DD/MM/YYYY)',
+// 115 Standardized Headers in exact order
+const STANDARDIZED_HEADERS = [
+    'Mã nhân viên',
+    'Họ và tên',
+    'Giới tính',
+    'Ngày sinh',
+    'ĐT di động',
+    'Email cơ quan',
+    'Vị trí công việc',
+    'Đơn vị công tác',
+    'Ngày thử việc',
+    'Ngày chính thức',
+    'Loại hợp đồng',
+    'Trạng thái lao động',
+    'Thâm niên',
+    'Tham gia bảo hiểm',
+    'ĐT tài khoản',
+    'Tên gọi khác',
+    'Nhóm lý do nghỉ',
+    'Ngày nghỉ hưu dự kiến',
+    'Tính chất lao động',
+    'Bậc lương',
+    'Tổng lương',
+    'Tham gia công đoàn',
     'Nơi sinh',
     'Nguyên quán',
+    'Tình trạng hôn nhân',
+    'MST cá nhân',
+    'TP gia đình',
+    'TP bản thân',
     'Dân tộc',
     'Tôn giáo',
     'Quốc tịch',
-    'Tình trạng hôn nhân',
-    'Số con',
-    'Mã phòng ban (*)',
-    'Mã chức danh / Vị trí (*)',
-    'Cấp bậc nhân sự',
-    'Chức danh chuyên môn',
-    'Địa điểm làm việc',
-    'Khối / Khu vực làm việc',
-    'Mã quản lý trực tiếp',
-    'Họ tên quản lý trực tiếp',
-    'Mã quản lý gián tiếp',
-    'Họ tên quản lý gián tiếp',
-    'Tính chất lao động (*)',
-    'Trạng thái làm việc (*)',
-    'Ngày bắt đầu làm việc (*)',
-    'Ngày kết thúc (HĐ/Nghỉ)',
-    'Loại hợp đồng (*)',
-    'Ngày bắt đầu thử việc',
-    'Ngày ký HĐ chính thức',
-    'Số ĐT di động (*)',
-    'Số ĐT bàn / Khác',
-    'Email công việc',
-    'Email cá nhân',
-    'Địa chỉ thường trú',
-    'Địa chỉ tạm trú / Hiện tại',
-    'Số CCCD / CMND',
-    'Ngày cấp CCCD (DD/MM/YYYY)',
-    'Nơi cấp CCCD',
-    'Ngày hết hạn CCCD',
-    'Số hộ chiếu (Passport)',
-    'Ngày cấp hộ chiếu',
-    'Mã số thuế cá nhân',
-    'Bậc lương',
-    'Lương cơ bản (VNĐ) (*)',
-    'Tổng lương / Thu nhập (VNĐ)',
-    'Lương đóng BHXH (VNĐ)',
-    'Số tài khoản ngân hàng',
-    'Tên ngân hàng',
-    'Chi nhánh ngân hàng',
-    'Tham gia BHXH',
-    'Số sổ / Mã số BHXH',
-    'Ngày tham gia BHXH',
-    'Nơi ĐK khám chữa bệnh ban đầu',
-    'Đoàn viên công đoàn',
-    'Trình độ học vấn',
-    'Hình thức đào tạo',
-    'Trường / Cơ sở đào tạo',
-    'Chuyên ngành đào tạo',
+    'Số CMND',
+    'Ngày cấp giấy tờ',
+    'Nơi cấp giấy tờ',
+    'Ngày hết hạn giấy tờ',
+    'Loại giấy tờ',
+    'Số Hộ chiếu',
+    'Ngày cấp Hộ chiếu',
+    'Nơi cấp Hộ chiếu',
+    'Ngày hết hạn Hộ chiếu',
+    'Trình độ văn hóa',
+    'Trình độ đào tạo',
+    'Nơi đào tạo',
+    'Khoa',
+    'Chuyên ngành',
     'Năm tốt nghiệp',
-    'Xếp loại tốt nghiệp',
-    'Bằng cấp chuyên môn khác & Chứng chỉ',
-    'Họ tên người liên hệ khẩn cấp',
-    'Mối quan hệ khẩn cấp',
-    'Số ĐT khẩn cấp'
+    'Xếp loại',
+    'ĐT cơ quan',
+    'ĐT nhà riêng',
+    'ĐT khác',
+    'Email cá nhân',
+    'Email khác',
+    'Skype',
+    'Facebook',
+    'Hộ khẩu thường trú',
+    'Quốc gia (Thường trú)',
+    'Tỉnh/Thành phố (Thường trú)',
+    'Quận/Huyện (Thường trú)',
+    'Phường/Xã (Thường trú)',
+    'Số nhà, đường phố (Thường trú)',
+    'Số sổ hộ khẩu',
+    'Mã số hộ gia đình',
+    'Là chủ hộ',
+    'Chỗ ở hiện nay',
+    'Quốc gia (Hiện nay)',
+    'Tỉnh/Thành phố (Hiện nay)',
+    'Quận/Huyện (Hiện nay)',
+    'Phường/Xã (Hiện nay)',
+    'Số nhà, đường phố (Hiện nay)',
+    'Họ và tên (LHKC)',
+    'Quan hệ (LHKC)',
+    'ĐT di động (LHKC)',
+    'ĐT nhà riêng (LHKC)',
+    'Email (LHKC)',
+    'Địa chỉ (LHKC)',
+    'Email tài khoản',
+    'Trạng thái tài khoản',
+    'Trạng thái chữ ký số',
+    'Trạng thái hồ sơ cấp CKS',
+    'Ngày có hiệu lực',
+    'Ngày hết hiệu lực',
+    'Chức danh',
+    'Mã chấm công',
+    'Cấp',
+    'Bậc',
+    'Lý do nghỉ',
+    'Ngày nghỉ việc',
+    'Thuộc danh sách đen',
+    'Người duyệt',
+    'Địa điểm làm việc',
+    'Số sổ QL lao động',
+    'Hệ số lương',
+    'Ngày học việc',
+    'Quản lý trực tiếp',
+    'Quản lý gián tiếp',
+    'Lương cơ bản',
+    'Lương đóng BH',
+    'TK ngân hàng',
+    'Ngân hàng',
+    'Chi nhánh',
+    'Ngày tham gia BH',
+    'Tỷ lệ đóng BH',
+    'Tỷ lệ đóng BHXH',
+    'Tỷ lệ đóng BHYT',
+    'Tỷ lệ đóng BHTN',
+    'Nhân sự khai thác',
+    'Số sổ BHXH',
+    'Nguồn ứng viên',
+    'Mã số BHXH',
+    'Mã tỉnh cấp',
+    'Số thẻ BHYT',
+    'Nơi đăng ký KCB',
+    'Khu vực làm việc',
+    'Mã vị trí công việc',
+    'Mã đơn vị công tác'
 ];
 
-rows.push(headers);
+const rows = [STANDARDIZED_HEADERS];
 
 // Generate exactly 1,000 distinct employees (TH-1001 to TH-2000)
 for (let i = 1; i <= 1000; i++) {
@@ -224,167 +273,220 @@ for (let i = 1; i <= 1000; i++) {
     const nationality = 'Việt Nam';
     const isMarried = birthYear < 1998;
     const maritalStatus = isMarried ? 'Đã kết hôn' : 'Độc thân';
-    const childrenCount = isMarried ? (i % 3) : 0;
 
     // Organization
     const deptObj = depts[i % depts.length];
     const posObj = positions[i % positions.length];
     const deptId = deptObj.department_id;
+    const deptName = deptObj.department_name;
     const posId = posObj.position_id;
     const posTitle = posObj.position_name;
 
-    let jobRank = 'Cấp 3 - Chuyên viên / Nhân viên Nghiệp vụ';
-    if (i % 15 === 0) jobRank = 'Cấp 2 - Quản lý Cấp trung / Trưởng phòng';
-    else if (i % 30 === 0) jobRank = 'Cấp 1 - Ban Lãnh đạo / Giám đốc';
-    else if (i % 8 === 0) jobRank = 'Cấp 4 - Nhân viên Sơ cấp / Tập sự';
+    let jobLevel = 'Cấp 3';
+    let jobRank = 'Bậc 3';
+    if (i % 15 === 0) { jobLevel = 'Cấp 2'; jobRank = 'Bậc 5'; }
+    else if (i % 30 === 0) { jobLevel = 'Cấp 1'; jobRank = 'Bậc 7'; }
+    else if (i % 8 === 0) { jobLevel = 'Cấp 4'; jobRank = 'Bậc 2'; }
 
     const workLocation = prov.location;
     const workArea = (prov.name === 'Hà Nội') ? 'Khối Văn phòng Tổng công ty' : `Khối Chi nhánh ${prov.name}`;
-    const directMgrId = (i <= 5) ? 'TH-0001' : `TH-${1000 + ((i % 20) + 1)}`;
     const directMgrName = (i <= 5) ? 'Huỳnh Thanh Long' : 'Quản lý Trực tiếp';
-    const indirectMgrId = 'TH-0001';
     const indirectMgrName = 'Huỳnh Thanh Long';
 
     // Labor nature & Status
     const laborNature = (i % 20 === 0) ? 'Thử việc' : 'Chính thức';
     const empStatus = (i % 50 === 0) ? 'Đã nghỉ việc' : (i % 60 === 0 ? 'Nghỉ thai sản' : 'Đang làm việc');
 
-    // Work dates
-    const startYear = 2018 + (i % 8);
-    const startMonth = ((i * 2) % 12) + 1;
-    const startDay = ((i * 3) % 28) + 1;
+    // Dates
+    const startYear = Math.max(birthYear + 22, 2018 + (i % 8));
+    const startMonth = ((i * 5) % 12) + 1;
+    const startDay = ((i * 7) % 28) + 1;
     const startDate = `${String(startDay).padStart(2, '0')}/${String(startMonth).padStart(2, '0')}/${startYear}`;
-    const endDate = empStatus === 'Đã nghỉ việc' ? `30/06/2026` : 'Không xác định';
 
-    let contractType = 'Hợp đồng lao động không xác định thời hạn';
-    if (laborNature === 'Thử việc') contractType = 'Hợp đồng thử việc';
-    else if (startYear >= 2025) contractType = 'Hợp đồng lao động xác định thời hạn (12 tháng)';
+    const trialStartDate = (laborNature === 'Thử việc') ? startDate : `${String(startDay).padStart(2, '0')}/${String(startMonth).padStart(2, '0')}/${startYear}`;
+    const officialDate = (laborNature === 'Thử việc') ? '' : `${String(startDay).padStart(2, '0')}/${String(((startMonth + 1) % 12) + 1).padStart(2, '0')}/${startYear}`;
+    const contractType = (laborNature === 'Thử việc')
+        ? 'Hợp đồng thử việc'
+        : ((i % 3 === 0) ? 'Hợp đồng lao động không xác định thời hạn' : 'Hợp đồng lao động xác định thời hạn (24 tháng)');
+    const endDate = (contractType.includes('không xác định')) ? 'Không xác định' : `31/12/${startYear + 2}`;
 
-    const trialStartDate = startDate;
-    const officialDate = laborNature === 'Thử việc' ? `01/04/2026` : startDate;
-
-    // Contact
+    // Contacts
     const cleanFirstName = removeVietnameseTones(fName).toLowerCase();
-    const cleanLastName = removeVietnameseTones(lName).toLowerCase();
-    const cleanMiddleName = removeVietnameseTones(mName).toLowerCase().substring(0, 1);
-    const workEmail = `${cleanFirstName}.${cleanLastName}${empNum}@trunghaico.vn`;
-    const personalEmail = `${cleanFirstName}${cleanMiddleName}${birthYear}${empNum}@gmail.com`;
+    const cleanMidInitial = removeVietnameseTones(mName).substring(0, 1).toLowerCase();
+    const cleanLastInitial = removeVietnameseTones(lName).substring(0, 1).toLowerCase();
+    const username = `${cleanFirstName}.${cleanLastInitial}${cleanMidInitial}${empNum}`;
 
-    const phonePrefix = ['090', '091', '093', '094', '097', '098', '086', '088', '077', '079'][i % 10];
-    const phone = `${phonePrefix}${String(1000000 + i).substring(1)}`;
-    const homePhone = (i % 4 === 0) ? `024${String(3000000 + i).substring(1)}` : '';
+    const phone = `09${String(80000000 + i).substring(1)}`;
+    const homePhone = (i % 3 === 0) ? `024${String(3800000 + i).substring(1)}` : '';
+    const workEmail = `${username}@trunghaico.vn`;
+    const personalEmail = `${username}@gmail.com`;
 
-    const permAddress = `Số ${10 + (i % 90)} Đường ${prov.name === 'Hà Nội' ? 'Giải Phóng' : 'Nguyễn Huệ'}, TP. ${prov.name}`;
+    // Addresses
+    const streetName = (i % 2 === 0) ? `Số ${12 + (i % 150)} Phố Huế` : `Số ${45 + (i % 200)} Đường Lê Duẩn`;
+    const wardName = (i % 2 === 0) ? 'Phường Hàng Bài' : 'Phường Hải Châu 1';
+    const districtName = (i % 2 === 0) ? 'Quận Hoàn Kiếm' : 'Quận Hải Châu';
+    const permAddress = `${streetName}, ${wardName}, ${districtName}, ${birthPlace}`;
     const currAddress = permAddress;
 
-    // Unique CCCD (12 digits)
-    const genderDigit = isMale ? (birthYear < 2000 ? '0' : '2') : (birthYear < 2000 ? '1' : '3');
-    const year2Digits = String(birthYear).substring(2);
-    const cccd = `${prov.code}${genderDigit}${year2Digits}${String(100000 + i).substring(1)}`;
-    const cccdIssueDate = `10/05/2021`;
+    // CCCD & Documents
+    const cccd = `${prov.code}${isMale ? '0' : '1'}${String(birthYear).substring(2)}${String(100000 + i).substring(1)}`;
+    const cccdIssueDate = `10/05/${Math.max(birthYear + 20, 2021)}`;
     const cccdIssuePlace = 'Cục Cảnh sát Quản lý hành chính về trật tự xã hội';
-    const cccdExpiryDate = `10/05/${birthYear + 40}`;
-    const passportNumber = (i % 3 === 0) ? `P0${String(1000000 + i).substring(1)}` : '';
-    const passportIssueDate = passportNumber ? `15/08/2022` : '';
+    const cccdExpiryDate = `${String(birthDay).padStart(2, '0')}/${String(birthMonth).padStart(2, '0')}/${birthYear + 40}`;
+
+    const hasPassport = (i % 3 === 0);
+    const passportNumber = hasPassport ? `P0${String(1000000 + i).substring(1)}` : '';
+    const passportIssueDate = hasPassport ? `12/04/2022` : '';
     const taxCode = `8${String(100000000 + i).substring(1)}`;
 
-    // Salaries
-    const salaryGrade = (i % 6) + 1;
-    const baseSalary = 10000000 + (salaryGrade * 2500000) + ((i % 5) * 500000);
+    // Salary & Bank
+    const salaryGrade = (i % 7) + 1;
+    const baseSalary = 10000000 + (salaryGrade * 2000000);
     const totalSalary = Math.round(baseSalary * 1.25);
     const insuranceSalary = Math.min(baseSalary, 23400000);
-
+    const bankAccount = `190${String(3000000000 + i).substring(1)}`;
     const bankName = banks[i % banks.length];
-    const bankAccount = `10${String(1000000000 + i).substring(1)}`;
     const bankBranch = `Chi nhánh ${prov.name}`;
 
     // Insurance & Union
-    const hasInsurance = 'Tham gia đầy đủ';
+    const hasInsurance = 'Có';
     const socialInsuranceBook = `04${String(10000000 + i).substring(1)}`;
     const insuranceJoinDate = startDate;
     const hospitalRegistered = prov.hospital;
-    const unionMember = 'Đoàn viên';
 
     // Education
     const uni = universities[i % universities.length];
     const eduLevel = (i % 10 === 0) ? 'Thạc sĩ' : ((i % 15 === 0) ? 'Cao đẳng' : 'Đại học');
-    const degreeType = 'Chính quy';
     const institution = uni.name;
     const major = uni.major;
     const gradYear = birthYear + 22;
     const classification = (i % 5 === 0) ? 'Xuất sắc' : ((i % 3 === 0) ? 'Giỏi' : 'Khá');
-    const otherCerts = (i % 4 === 0) ? 'Chứng chỉ TOEIC 750, Chứng chỉ Tin học Quốc tế MOS' : 'Chứng chỉ Ngoại ngữ B2';
 
     // Emergency Contact
     const emergRelation = isMarried ? (isMale ? 'Vợ' : 'Chồng') : 'Bố';
     const emergName = isMarried ? `${lastNames[(i + 3) % lastNames.length]} Thị Hoa` : `${lName} Văn Hùng`;
     const emergPhone = `091${String(2000000 + i).substring(1)}`;
 
+    const seniorityYears = Math.max(1, 2026 - startYear);
+    const retirementYear = birthYear + (isMale ? 62 : 60);
+    const expectedRetirementDate = `${dobFormatted.substring(0, 6)}${retirementYear}`;
+
     rows.push([
-        empId,
-        timeAttendanceCode,
-        fullName,
-        gender,
-        dobFormatted,
-        birthPlace,
-        nativePlace,
-        ethnicity,
-        religion,
-        nationality,
-        maritalStatus,
-        childrenCount,
-        deptId,
-        posId,
-        jobRank,
-        posTitle,
-        workLocation,
-        workArea,
-        directMgrId,
-        directMgrName,
-        indirectMgrId,
-        indirectMgrName,
-        laborNature,
-        empStatus,
-        startDate,
-        endDate,
-        contractType,
-        trialStartDate,
-        officialDate,
-        phone,
-        homePhone,
-        workEmail,
-        personalEmail,
-        permAddress,
-        currAddress,
-        cccd,
-        cccdIssueDate,
-        cccdIssuePlace,
-        cccdExpiryDate,
-        passportNumber,
-        passportIssueDate,
-        taxCode,
-        salaryGrade,
-        baseSalary,
-        totalSalary,
-        insuranceSalary,
-        bankAccount,
-        bankName,
-        bankBranch,
-        hasInsurance,
-        socialInsuranceBook,
-        insuranceJoinDate,
-        hospitalRegistered,
-        unionMember,
-        eduLevel,
-        degreeType,
-        institution,
-        major,
-        gradYear,
-        classification,
-        otherCerts,
-        emergName,
-        emergRelation,
-        emergPhone
+        empId,                                                  // 1. Mã nhân viên
+        fullName,                                               // 2. Họ và tên
+        gender,                                                 // 3. Giới tính
+        dobFormatted,                                           // 4. Ngày sinh
+        phone,                                                  // 5. ĐT di động
+        workEmail,                                              // 6. Email cơ quan
+        posTitle,                                               // 7. Vị trí công việc
+        deptName,                                               // 8. Đơn vị công tác
+        trialStartDate,                                         // 9. Ngày thử việc
+        officialDate,                                           // 10. Ngày chính thức
+        contractType,                                           // 11. Loại hợp đồng
+        empStatus,                                              // 12. Trạng thái lao động
+        `${seniorityYears} năm`,                                // 13. Thâm niên
+        hasInsurance,                                           // 14. Tham gia bảo hiểm
+        phone,                                                  // 15. ĐT tài khoản
+        '',                                                     // 16. Tên gọi khác
+        (empStatus === 'Đã nghỉ việc' ? 'Cá nhân' : ''),        // 17. Nhóm lý do nghỉ
+        expectedRetirementDate,                                 // 18. Ngày nghỉ hưu dự kiến
+        laborNature,                                            // 19. Tính chất lao động
+        String(salaryGrade),                                    // 20. Bậc lương
+        totalSalary,                                            // 21. Tổng lương
+        'Có',                                                   // 22. Tham gia công đoàn
+        birthPlace,                                             // 23. Nơi sinh
+        nativePlace,                                            // 24. Nguyên quán
+        maritalStatus,                                          // 25. Tình trạng hôn nhân
+        taxCode,                                                // 26. MST cá nhân
+        'Cán bộ công chức',                                     // 27. TP gia đình
+        'Công nhân viên chức',                                  // 28. TP bản thân
+        ethnicity,                                              // 29. Dân tộc
+        religion,                                               // 30. Tôn giáo
+        nationality,                                            // 31. Quốc tịch
+        cccd,                                                   // 32. Số CMND
+        cccdIssueDate,                                          // 33. Ngày cấp giấy tờ
+        cccdIssuePlace,                                         // 34. Nơi cấp giấy tờ
+        cccdExpiryDate,                                         // 35. Ngày hết hạn giấy tờ
+        'CCCD',                                                 // 36. Loại giấy tờ
+        passportNumber,                                         // 37. Số Hộ chiếu
+        passportIssueDate,                                      // 38. Ngày cấp Hộ chiếu
+        passportNumber ? 'Cục Quản lý Xuất nhập cảnh' : '',    // 39. Nơi cấp Hộ chiếu
+        passportIssueDate ? `12/04/2032` : '',                  // 40. Ngày hết hạn Hộ chiếu
+        '12/12',                                                // 41. Trình độ văn hóa
+        eduLevel,                                               // 42. Trình độ đào tạo
+        institution,                                            // 43. Nơi đào tạo
+        major.includes('CNTT') ? 'Công nghệ Thông tin' : (major.includes('Kinh tế') ? 'Kinh tế Quốc tế' : 'Quản trị Kinh doanh'), // 44. Khoa
+        major,                                                  // 45. Chuyên ngành
+        gradYear,                                               // 46. Năm tốt nghiệp
+        classification,                                         // 47. Xếp loại
+        '02438888999',                                          // 48. ĐT cơ quan
+        homePhone,                                              // 49. ĐT nhà riêng
+        '',                                                     // 50. ĐT khác
+        personalEmail,                                          // 51. Email cá nhân
+        '',                                                     // 52. Email khác
+        `${username}.work`,                                     // 53. Skype
+        `facebook.com/${username}`,                             // 54. Facebook
+        permAddress,                                            // 55. Hộ khẩu thường trú
+        'Việt Nam',                                             // 56. Quốc gia (Thường trú)
+        birthPlace,                                             // 57. Tỉnh/Thành phố (Thường trú)
+        districtName,                                           // 58. Quận/Huyện (Thường trú)
+        wardName,                                               // 59. Phường/Xã (Thường trú)
+        streetName,                                             // 60. Số nhà, đường phố (Thường trú)
+        `HK-${String(100000 + i)}`,                             // 61. Số sổ hộ khẩu
+        `HGD-${String(200000 + i)}`,                            // 62. Mã số hộ gia đình
+        isMarried && isMale ? 'Có' : 'Không',                   // 63. Là chủ hộ
+        currAddress,                                            // 64. Chỗ ở hiện nay
+        'Việt Nam',                                             // 65. Quốc gia (Hiện nay)
+        birthPlace,                                             // 66. Tỉnh/Thành phố (Hiện nay)
+        districtName,                                           // 67. Quận/Huyện (Hiện nay)
+        wardName,                                               // 68. Phường/Xã (Hiện nay)
+        streetName,                                             // 69. Số nhà, đường phố (Hiện nay)
+        emergName,                                              // 70. Họ và tên (LHKC)
+        emergRelation,                                          // 71. Quan hệ (LHKC)
+        emergPhone,                                             // 72. ĐT di động (LHKC)
+        '02438888999',                                          // 73. ĐT nhà riêng (LHKC)
+        `lh_${username}@gmail.com`,                             // 74. Email (LHKC)
+        permAddress,                                            // 75. Địa chỉ (LHKC)
+        workEmail,                                              // 76. Email tài khoản
+        'Kích hoạt',                                            // 77. Trạng thái tài khoản
+        (i % 3 === 0 ? 'Chưa kích hoạt' : 'Đã kích hoạt'),     // 78. Trạng thái chữ ký số
+        (i % 3 === 0 ? 'Chờ cấp' : 'Hợp lệ'),                   // 79. Trạng thái hồ sơ cấp CKS
+        startDate,                                              // 80. Ngày có hiệu lực
+        (endDate !== 'Không xác định' ? endDate : ''),          // 81. Ngày hết hiệu lực
+        posTitle,                                               // 82. Chức danh
+        timeAttendanceCode,                                     // 83. Mã chấm công
+        jobLevel,                                               // 84. Cấp
+        jobRank,                                                // 85. Bậc
+        (empStatus === 'Đã nghỉ việc' ? 'Hết hạn HĐLĐ' : ''),   // 86. Lý do nghỉ
+        (empStatus === 'Đã nghỉ việc' ? endDate : ''),          // 87. Ngày nghỉ việc
+        'Không',                                                // 88. Thuộc danh sách đen
+        'Huỳnh Thanh Long',                                     // 89. Người duyệt
+        workLocation,                                           // 90. Địa điểm làm việc
+        `LD-${String(10000 + i)}`,                              // 91. Số sổ QL lao động
+        (1.8 + (salaryGrade * 0.35)).toFixed(2),                // 92. Hệ số lương
+        (i % 5 === 0 ? startDate : ''),                         // 93. Ngày học việc
+        directMgrName,                                          // 94. Quản lý trực tiếp
+        indirectMgrName,                                        // 95. Quản lý gián tiếp
+        baseSalary,                                             // 96. Lương cơ bản
+        insuranceSalary,                                        // 97. Lương đóng BH
+        bankAccount,                                            // 98. TK ngân hàng
+        bankName,                                               // 99. Ngân hàng
+        bankBranch,                                             // 100. Chi nhánh
+        insuranceJoinDate,                                      // 101. Ngày tham gia BH
+        '32%',                                                  // 102. Tỷ lệ đóng BH
+        '25.5%',                                                // 103. Tỷ lệ đóng BHXH
+        '4.5%',                                                 // 104. Tỷ lệ đóng BHYT
+        '2%',                                                   // 105. Tỷ lệ đóng BHTN
+        'Lê Thị Thu',                                           // 106. Nhân sự khai thác
+        socialInsuranceBook,                                    // 107. Số sổ BHXH
+        (i % 3 === 0 ? 'VietnamWorks' : 'TopCV'),               // 108. Nguồn ứng viên
+        socialInsuranceBook,                                    // 109. Mã số BHXH
+        prov.code,                                              // 110. Mã tỉnh cấp
+        `DN4${prov.code}${socialInsuranceBook}`,                // 111. Số thẻ BHYT
+        hospitalRegistered,                                     // 112. Nơi đăng ký KCB
+        workArea,                                               // 113. Khu vực làm việc
+        posId,                                                  // 114. Mã vị trí công việc
+        deptId                                                  // 115. Mã đơn vị công tác
     ]);
 }
 
@@ -392,13 +494,13 @@ const wb = XLSX.utils.book_new();
 
 // Sheet 1: Danh_Sach_Nhan_Su
 const ws1 = XLSX.utils.aoa_to_sheet(rows);
-ws1['!cols'] = headers.map(() => ({ wch: 22 }));
-ws1['!cols'][0] = { wch: 16 }; // Mã NV
-ws1['!cols'][2] = { wch: 24 }; // Họ tên
-ws1['!cols'][31] = { wch: 28 }; // Email công việc
-ws1['!cols'][33] = { wch: 36 }; // Thường trú
-ws1['!cols'][34] = { wch: 36 }; // Tạm trú
-ws1['!cols'][35] = { wch: 18 }; // CCCD
+ws1['!cols'] = STANDARDIZED_HEADERS.map(() => ({ wch: 20 }));
+ws1['!cols'][0] = { wch: 16 };  // Mã NV
+ws1['!cols'][1] = { wch: 24 };  // Họ tên
+ws1['!cols'][5] = { wch: 28 };  // Email cơ quan
+ws1['!cols'][54] = { wch: 40 }; // Hộ khẩu thường trú
+ws1['!cols'][63] = { wch: 40 }; // Chỗ ở hiện nay
+ws1['!cols'][31] = { wch: 18 }; // CMND
 
 XLSX.utils.book_append_sheet(wb, ws1, 'Danh_Sach_Nhan_Su');
 
@@ -407,18 +509,18 @@ const refData = [
     ['=== DANH MỤC THAM CHIẾU HỆ THỐNG QUẢN TRỊ NHÂN SỰ TRUNG HẢI ===', ''],
     ['(Sử dụng các giá trị chuẩn trong sheet này để tra cứu thông tin)', ''],
     ['', ''],
-    ['1. DANH SÁCH MÃ PHÒNG BAN (*)', 'TÊN PHÒNG BAN / ĐƠN VỊ CÔNG TÁC'],
+    ['1. DANH SÁCH MÃ ĐƠN VỊ CÔNG TÁC (*)', 'TÊN ĐƠN VỊ CÔNG TÁC'],
     ...depts.map(d => [d.department_id, d.department_name]),
     ['', ''],
-    ['2. DANH SÁCH MÃ VỊ TRÍ / CHỨC DANH (*)', 'TÊN VỊ TRÍ CÔNG VIỆC'],
+    ['2. DANH SÁCH MÃ VỊ TRÍ CÔNG VIỆC (*)', 'TÊN VỊ TRÍ CÔNG VIỆC'],
     ...positions.map(p => [p.position_id, p.position_name]),
     ['', ''],
     ['3. CẤP BẬC NHÂN SỰ', 'MÔ TẢ CẤP BẬC'],
-    ['Cấp 1 - Ban Lãnh đạo / Giám đốc', 'Tổng Giám đốc, Phó TGĐ, Giám đốc khối'],
-    ['Cấp 2 - Quản lý Cấp trung / Trưởng phòng', 'Trưởng/Phó phòng ban, Chỉ huy trưởng'],
-    ['Cấp 3 - Chuyên viên / Nhân viên Nghiệp vụ', 'Chuyên viên, Nhân viên nghiệp vụ chính thức'],
-    ['Cấp 4 - Nhân viên Sơ cấp / Tập sự', 'Nhân viên mới, Tập sự, Học việc'],
-    ['Cấp 5 - Công nhân / Lao động trực tiếp', 'Công nhân hiện trường, Lao động trực tiếp'],
+    ['Cấp 1', 'Ban Lãnh đạo / Giám đốc'],
+    ['Cấp 2', 'Quản lý Cấp trung / Trưởng phòng'],
+    ['Cấp 3', 'Chuyên viên / Nhân viên Nghiệp vụ'],
+    ['Cấp 4', 'Nhân viên Sơ cấp / Tập sự'],
+    ['Cấp 5', 'Công nhân / Lao động trực tiếp'],
     ['', ''],
     ['4. TÍNH CHẤT LAO ĐỘNG HỢP LỆ (*)', 'GHI CHÚ ÁP DỤNG'],
     ['Chính thức', 'Đã ký hợp đồng lao động chính thức'],
@@ -427,7 +529,7 @@ const refData = [
     ['Thực tập', 'Sinh viên thực tập tốt nghiệp'],
     ['Thời vụ', 'Hợp đồng theo mùa vụ / dự án ngắn hạn'],
     ['', ''],
-    ['5. TRẠNG THÁI LÀM VIỆC (*)', 'Ý NGHĨA'],
+    ['5. TRẠNG THÁI LAO ĐỘNG (*)', 'Ý NGHĨA'],
     ['Đang làm việc', 'Đang công tác hoạt động bình thường'],
     ['Đã nghỉ việc', 'Đã thôi việc, thanh lý hợp đồng lao động'],
     ['Nghỉ thai sản', 'Đang nghỉ chế độ thai sản'],
@@ -441,7 +543,7 @@ const refData = [
     ['Hợp đồng thử việc', 'Hợp đồng thử việc 1 - 2 tháng'],
     ['Hợp đồng lao động thời vụ', 'Hợp đồng ngắn hạn dưới 12 tháng'],
     ['', ''],
-    ['7. TRÌNH ĐỘ HỌC VẤN & HÌNH THỨC ĐÀO TẠO', 'HÌNH THỨC'],
+    ['7. TRÌNH ĐỘ ĐÀO TẠO & HÌNH THỨC', 'HÌNH THỨC'],
     ['Đại học', 'Chính quy'],
     ['Thạc sĩ', 'Tại chức'],
     ['Tiến sĩ', 'Liên thông'],
@@ -456,7 +558,7 @@ const refData = [
     ['Agribank', 'VPBank'],
     ['TPBank', 'Sacombank'],
     ['', ''],
-    ['9. QUAN HỆ KHẨN CẤP', ''],
+    ['9. QUAN HỆ KHẨN CẤP (LHKC)', ''],
     ['Vợ', 'Chồng'],
     ['Bố', 'Mẹ'],
     ['Anh trai', 'Chị gái'],
@@ -472,6 +574,6 @@ XLSX.utils.book_append_sheet(wb, ws2, 'Danh_Muc_Tham_Chieu');
 XLSX.writeFile(wb, OUTPUT_EXCEL_PATH);
 XLSX.writeFile(wb, PUBLIC_EXCEL_PATH);
 
-console.log(`✅ Đã xuất thành công file Excel 1,000 nhân sự mẫu:`);
+console.log(`✅ Đã xuất thành công file Excel 1,000 nhân sự mẫu với chuẩn 115 cột!`);
 console.log(`📁 Đường dẫn gốc: ${OUTPUT_EXCEL_PATH}`);
 console.log(`📁 Đường dẫn web public: ${PUBLIC_EXCEL_PATH}`);

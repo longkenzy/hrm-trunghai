@@ -242,8 +242,8 @@ const appImport = {
 
       const empId = (normalized['Mã nhân viên'] || normalized['employee_id'] || normalized['Mã NV'] || '').toString().trim().toUpperCase();
       const timeAttendanceCode = (normalized['Mã chấm công'] || normalized['time_attendance_code'] || '').toString().trim();
-      const idNumber = (normalized['Số CCCD / CMND'] || normalized['Số CCCD / Hộ chiếu'] || normalized['Số CCCD'] || normalized['CCCD'] || normalized['id_number'] || '').toString().trim();
-      const email = (normalized['Email công việc'] || normalized['Email'] || normalized['work_email'] || '').toString().toLowerCase().trim();
+      const idNumber = (normalized['Số CMND'] || normalized['Số CCCD / CMND'] || normalized['Số CCCD / Hộ chiếu'] || normalized['Số CCCD'] || normalized['CCCD'] || normalized['id_number'] || '').toString().trim();
+      const email = (normalized['Email cơ quan'] || normalized['Email công việc'] || normalized['Email'] || normalized['work_email'] || '').toString().toLowerCase().trim();
 
       if (empId) {
         fileEmpIdCounts.set(empId, (fileEmpIdCounts.get(empId) || 0) + 1);
@@ -264,7 +264,7 @@ const appImport = {
     // 2. Comprehensive validation pass
     normalizedRows.forEach(({ rowIdx, normalized, empId, timeAttendanceCode, idNumber, email, fullName }) => {
       const gender = (normalized['Giới tính'] || normalized['gender'] || 'Nam').toString().trim();
-      const dob = normalized['Ngày sinh (DD/MM/YYYY)'] || normalized['Ngày sinh'] || normalized['date_of_birth'] || '';
+      const dob = normalized['Ngày sinh'] || normalized['Ngày sinh (DD/MM/YYYY)'] || normalized['date_of_birth'] || '';
       const birthPlace = (normalized['Nơi sinh'] || normalized['birth_place'] || '').toString().trim();
       const nativePlace = (normalized['Nguyên quán'] || normalized['native_place'] || '').toString().trim();
       const ethnicity = (normalized['Dân tộc'] || normalized['ethnicity'] || 'Kinh').toString().trim();
@@ -273,63 +273,63 @@ const appImport = {
       const maritalStatus = (normalized['Tình trạng hôn nhân'] || normalized['marital_status'] || 'Độc thân').toString().trim();
       const childrenCount = parseInt(normalized['Số con'] || normalized['children_count'] || 0, 10) || 0;
 
-      const dept = (normalized['Mã phòng ban'] || normalized['Phòng/Ban'] || normalized['department_id'] || normalized['Phòng ban'] || '').toString().trim();
-      const pos = (normalized['Mã chức danh / Vị trí'] || normalized['Mã chức danh'] || normalized['Chức danh'] || normalized['Vị trí'] || normalized['position_id'] || '').toString().trim();
-      const jobRank = (normalized['Cấp bậc nhân sự'] || normalized['Cấp bậc'] || normalized['job_rank'] || 'Cấp 3 - Chuyên viên / Nhân viên Nghiệp vụ').toString().trim();
-      const professionalTitle = (normalized['Chức danh chuyên môn'] || normalized['job_title'] || '').toString().trim();
+      const dept = (normalized['Mã đơn vị công tác'] || normalized['Đơn vị công tác'] || normalized['Mã phòng ban'] || normalized['Phòng/Ban'] || normalized['department_id'] || normalized['Phòng ban'] || '').toString().trim();
+      const pos = (normalized['Mã vị trí công việc'] || normalized['Vị trí công việc'] || normalized['Mã chức danh / Vị trí'] || normalized['Mã chức danh'] || normalized['Chức danh'] || normalized['Vị trí'] || normalized['position_id'] || '').toString().trim();
+      const jobRank = (normalized['Bậc'] || normalized['Cấp bậc nhân sự'] || normalized['Cấp bậc'] || normalized['job_rank'] || 'Bậc 3').toString().trim();
+      const professionalTitle = (normalized['Chức danh'] || normalized['Chức danh chuyên môn'] || normalized['job_title'] || '').toString().trim();
       const workLocation = (normalized['Địa điểm làm việc'] || normalized['work_location'] || 'Trụ sở Tổng công ty - Tòa nhà Trung Hải, Hà Nội').toString().trim();
-      const workArea = (normalized['Khối / Khu vực làm việc'] || normalized['Khối làm việc'] || normalized['work_area'] || 'Khối Văn phòng Tổng công ty').toString().trim();
+      const workArea = (normalized['Khu vực làm việc'] || normalized['Khối / Khu vực làm việc'] || normalized['Khối làm việc'] || normalized['work_area'] || 'Khối Văn phòng Tổng công ty').toString().trim();
       const directMgrId = (normalized['Mã quản lý trực tiếp'] || normalized['direct_manager_id'] || '').toString().trim();
-      const directMgrName = (normalized['Họ tên quản lý trực tiếp'] || normalized['direct_manager_name'] || '').toString().trim();
+      const directMgrName = (normalized['Quản lý trực tiếp'] || normalized['Họ tên quản lý trực tiếp'] || normalized['direct_manager_name'] || '').toString().trim();
       const indirectMgrId = (normalized['Mã quản lý gián tiếp'] || normalized['indirect_manager_id'] || '').toString().trim();
-      const indirectMgrName = (normalized['Họ tên quản lý gián tiếp'] || normalized['indirect_manager_name'] || '').toString().trim();
+      const indirectMgrName = (normalized['Quản lý gián tiếp'] || normalized['Họ tên quản lý gián tiếp'] || normalized['indirect_manager_name'] || '').toString().trim();
 
       const laborNature = (normalized['Tính chất lao động'] || normalized['Tính chất'] || normalized['labor_nature'] || 'Chính thức').toString().trim();
-      const status = (normalized['Trạng thái làm việc'] || normalized['Trạng thái'] || normalized['employment_status'] || 'Đang làm việc').toString().trim();
-      const startDate = normalized['Ngày bắt đầu làm việc'] || normalized['Ngày vào làm'] || normalized['start_date'] || '';
-      const endDate = normalized['Ngày kết thúc (HĐ/Nghỉ)'] || normalized['Ngày kết thúc'] || normalized['end_date'] || 'Không xác định';
+      const status = (normalized['Trạng thái lao động'] || normalized['Trạng thái làm việc'] || normalized['Trạng thái'] || normalized['employment_status'] || 'Đang làm việc').toString().trim();
+      const startDate = normalized['Ngày bắt đầu làm việc'] || normalized['Ngày thử việc'] || normalized['Ngày học việc'] || normalized['Ngày chính thức'] || normalized['Ngày vào làm'] || normalized['start_date'] || '';
+      const endDate = normalized['Ngày hết hiệu lực'] || normalized['Ngày kết thúc (HĐ/Nghỉ)'] || normalized['Ngày kết thúc'] || normalized['end_date'] || 'Không xác định';
       const contractType = (normalized['Loại hợp đồng'] || normalized['contract_type'] || 'Hợp đồng lao động không xác định thời hạn').toString().trim();
-      const trialStartDate = normalized['Ngày bắt đầu thử việc'] || normalized['trial_start_date'] || startDate;
-      const officialDate = normalized['Ngày ký HĐ chính thức'] || normalized['official_date'] || startDate;
+      const trialStartDate = normalized['Ngày thử việc'] || normalized['Ngày bắt đầu thử việc'] || normalized['trial_start_date'] || startDate;
+      const officialDate = normalized['Ngày chính thức'] || normalized['Ngày ký HĐ chính thức'] || normalized['official_date'] || startDate;
 
-      const phone = (normalized['Số ĐT di động'] || normalized['Số điện thoại'] || normalized['Điện thoại'] || normalized['mobile_phone'] || '').toString().trim();
-      const homePhone = (normalized['Số ĐT bàn / Khác'] || normalized['Số ĐT bàn'] || normalized['home_phone'] || '').toString().trim();
+      const phone = (normalized['ĐT di động'] || normalized['Số ĐT di động'] || normalized['Số điện thoại'] || normalized['Điện thoại'] || normalized['mobile_phone'] || '').toString().trim();
+      const homePhone = (normalized['ĐT nhà riêng'] || normalized['Số ĐT bàn / Khác'] || normalized['Số ĐT bàn'] || normalized['home_phone'] || '').toString().trim();
       const personalEmail = (normalized['Email cá nhân'] || normalized['personal_email'] || '').toString().trim();
-      const permAddress = (normalized['Địa chỉ thường trú'] || normalized['Thường trú'] || normalized['permanent_address_full'] || '').toString().trim();
-      const currAddress = (normalized['Địa chỉ tạm trú / Hiện tại'] || normalized['Địa chỉ hiện tại'] || normalized['Địa chỉ tạm trú'] || normalized['current_address_full'] || permAddress).toString().trim();
+      const permAddress = (normalized['Hộ khẩu thường trú'] || normalized['Địa chỉ thường trú'] || normalized['Thường trú'] || normalized['permanent_address_full'] || '').toString().trim();
+      const currAddress = (normalized['Chỗ ở hiện nay'] || normalized['Địa chỉ tạm trú / Hiện tại'] || normalized['Địa chỉ hiện tại'] || normalized['Địa chỉ tạm trú'] || normalized['current_address_full'] || permAddress).toString().trim();
 
-      const idIssueDate = normalized['Ngày cấp CCCD (DD/MM/YYYY)'] || normalized['Ngày cấp CCCD'] || normalized['Ngày cấp'] || normalized['id_issue_date'] || '';
-      const idIssuePlace = (normalized['Nơi cấp CCCD'] || normalized['Nơi cấp'] || normalized['id_issue_place'] || 'Cục Cảnh sát Quản lý hành chính về trật tự xã hội').toString().trim();
-      const idExpiryDate = normalized['Ngày hết hạn CCCD'] || normalized['id_expiry_date'] || '';
-      const passportNumber = (normalized['Số hộ chiếu (Passport)'] || normalized['Số hộ chiếu'] || normalized['passport_number'] || '').toString().trim();
-      const passportIssueDate = normalized['Ngày cấp hộ chiếu'] || normalized['passport_issue_date'] || '';
-      const taxCode = (normalized['Mã số thuế cá nhân'] || normalized['Mã số thuế'] || normalized['tax_code'] || '').toString().trim();
+      const idIssueDate = normalized['Ngày cấp giấy tờ'] || normalized['Ngày cấp CCCD (DD/MM/YYYY)'] || normalized['Ngày cấp CCCD'] || normalized['Ngày cấp'] || normalized['id_issue_date'] || '';
+      const idIssuePlace = (normalized['Nơi cấp giấy tờ'] || normalized['Nơi cấp CCCD'] || normalized['Nơi cấp'] || normalized['id_issue_place'] || 'Cục Cảnh sát Quản lý hành chính về trật tự xã hội').toString().trim();
+      const idExpiryDate = normalized['Ngày hết hạn giấy tờ'] || normalized['Ngày hết hạn CCCD'] || normalized['id_expiry_date'] || '';
+      const passportNumber = (normalized['Số Hộ chiếu'] || normalized['Số hộ chiếu (Passport)'] || normalized['Số hộ chiếu'] || normalized['passport_number'] || '').toString().trim();
+      const passportIssueDate = normalized['Ngày cấp Hộ chiếu'] || normalized['Ngày cấp hộ chiếu'] || normalized['passport_issue_date'] || '';
+      const taxCode = (normalized['MST cá nhân'] || normalized['Mã số thuế cá nhân'] || normalized['Mã số thuế'] || normalized['tax_code'] || '').toString().trim();
 
       const salaryGrade = parseInt(normalized['Bậc lương'] || normalized['salary_grade'] || 3, 10) || 3;
-      const baseSalary = parseFloat((normalized['Lương cơ bản (VNĐ)'] || normalized['Lương cơ bản'] || normalized['base_salary'] || '0').toString().replace(/[^0-9.-]+/g, '')) || 0;
-      const totalSalary = parseFloat((normalized['Tổng lương / Thu nhập (VNĐ)'] || normalized['Tổng lương'] || normalized['total_salary'] || '0').toString().replace(/[^0-9.-]+/g, '')) || 0;
-      const insuranceSalary = parseFloat((normalized['Lương đóng BHXH (VNĐ)'] || normalized['Lương đóng BHXH'] || normalized['insurance_salary'] || '0').toString().replace(/[^0-9.-]+/g, '')) || 0;
-      const bankAccount = (normalized['Số tài khoản ngân hàng'] || normalized['Số tài khoản'] || normalized['STK'] || normalized['bank_account_number'] || '').toString().trim();
-      const bankName = (normalized['Tên ngân hàng'] || normalized['Ngân hàng'] || normalized['bank_name'] || 'Vietcombank').toString().trim();
-      const bankBranch = (normalized['Chi nhánh ngân hàng'] || normalized['Chi nhánh'] || normalized['bank_branch'] || 'Chi nhánh Hà Nội').toString().trim();
+      const baseSalary = parseFloat((normalized['Lương cơ bản'] || normalized['Lương cơ bản (VNĐ)'] || normalized['base_salary'] || '0').toString().replace(/[^0-9.-]+/g, '')) || 0;
+      const totalSalary = parseFloat((normalized['Tổng lương'] || normalized['Tổng lương / Thu nhập (VNĐ)'] || normalized['total_salary'] || '0').toString().replace(/[^0-9.-]+/g, '')) || 0;
+      const insuranceSalary = parseFloat((normalized['Lương đóng BH'] || normalized['Lương đóng BHXH (VNĐ)'] || normalized['Lương đóng BHXH'] || normalized['insurance_salary'] || '0').toString().replace(/[^0-9.-]+/g, '')) || 0;
+      const bankAccount = (normalized['TK ngân hàng'] || normalized['Số tài khoản ngân hàng'] || normalized['Số tài khoản'] || normalized['STK'] || normalized['bank_account_number'] || '').toString().trim();
+      const bankName = (normalized['Ngân hàng'] || normalized['Tên ngân hàng'] || normalized['bank_name'] || 'Vietcombank').toString().trim();
+      const bankBranch = (normalized['Chi nhánh'] || normalized['Chi nhánh ngân hàng'] || normalized['bank_branch'] || 'Chi nhánh Hà Nội').toString().trim();
 
-      const hasInsurance = (normalized['Tham gia BHXH'] || normalized['has_insurance'] || 'Tham gia đầy đủ').toString().trim();
-      const socialInsuranceBook = (normalized['Số sổ / Mã số BHXH'] || normalized['Số sổ BHXH'] || normalized['Mã số BHXH'] || normalized['social_insurance_book_no'] || '').toString().trim();
-      const insuranceJoinDate = normalized['Ngày tham gia BHXH'] || normalized['insurance_join_date'] || startDate;
-      const hospitalRegistered = (normalized['Nơi ĐK khám chữa bệnh ban đầu'] || normalized['Nơi ĐK KCB ban đầu'] || normalized['hospital_registered'] || 'Bệnh viện Bạch Mai - Hà Nội').toString().trim();
-      const unionMember = (normalized['Đoàn viên công đoàn'] || normalized['union_member'] || 'Đoàn viên').toString().trim();
+      const hasInsurance = (normalized['Tham gia bảo hiểm'] || normalized['Tham gia BHXH'] || normalized['has_insurance'] || 'Có').toString().trim();
+      const socialInsuranceBook = (normalized['Số sổ BHXH'] || normalized['Mã số BHXH'] || normalized['Số sổ / Mã số BHXH'] || normalized['social_insurance_book_no'] || '').toString().trim();
+      const insuranceJoinDate = normalized['Ngày tham gia BH'] || normalized['Ngày tham gia BHXH'] || normalized['insurance_join_date'] || startDate;
+      const hospitalRegistered = (normalized['Nơi đăng ký KCB'] || normalized['Nơi ĐK khám chữa bệnh ban đầu'] || normalized['Nơi ĐK KCB ban đầu'] || normalized['hospital_registered'] || 'Bệnh viện Bạch Mai - Hà Nội').toString().trim();
+      const unionMember = (normalized['Tham gia công đoàn'] || normalized['Đoàn viên công đoàn'] || normalized['union_member'] || 'Đoàn viên').toString().trim();
 
-      const eduLevel = (normalized['Trình độ học vấn'] || normalized['Trình độ'] || normalized['education_level'] || 'Đại học').toString().trim();
+      const eduLevel = (normalized['Trình độ đào tạo'] || normalized['Trình độ học vấn'] || normalized['Trình độ'] || normalized['education_level'] || 'Đại học').toString().trim();
       const degreeType = (normalized['Hình thức đào tạo'] || normalized['degree_type'] || 'Chính quy').toString().trim();
-      const institution = (normalized['Trường / Cơ sở đào tạo'] || normalized['Trường'] || normalized['institution'] || 'Đại học').toString().trim();
-      const eduMajor = (normalized['Chuyên ngành đào tạo'] || normalized['Chuyên ngành'] || normalized['major'] || '').toString().trim();
+      const institution = (normalized['Nơi đào tạo'] || normalized['Trường / Cơ sở đào tạo'] || normalized['Trường'] || normalized['institution'] || 'Đại học').toString().trim();
+      const eduMajor = (normalized['Chuyên ngành'] || normalized['Chuyên ngành đào tạo'] || normalized['major'] || '').toString().trim();
       const gradYear = parseInt(normalized['Năm tốt nghiệp'] || normalized['graduation_year'] || 2020, 10) || 2020;
-      const gradClassification = (normalized['Xếp loại tốt nghiệp'] || normalized['Xếp loại'] || normalized['classification'] || 'Khá').toString().trim();
+      const gradClassification = (normalized['Xếp loại'] || normalized['Xếp loại tốt nghiệp'] || normalized['classification'] || 'Khá').toString().trim();
       const otherCerts = (normalized['Bằng cấp chuyên môn khác & Chứng chỉ'] || normalized['Bằng cấp khác'] || normalized['other_certificates'] || '').toString().trim();
 
-      const emergName = (normalized['Họ tên người liên hệ khẩn cấp'] || normalized['Người liên hệ khẩn cấp'] || normalized['Người khẩn cấp'] || normalized['emergency_name'] || '').toString().trim();
-      const emergRelation = (normalized['Mối quan hệ khẩn cấp'] || normalized['Quan hệ khẩn cấp'] || normalized['Quan hệ'] || normalized['emergency_relation'] || 'Người thân').toString().trim();
-      const emergPhone = (normalized['Số ĐT khẩn cấp'] || normalized['SĐT khẩn cấp'] || normalized['emergency_phone'] || '').toString().trim();
+      const emergName = (normalized['Họ và tên (LHKC)'] || normalized['Họ tên người liên hệ khẩn cấp'] || normalized['Người liên hệ khẩn cấp'] || normalized['Người khẩn cấp'] || normalized['emergency_name'] || '').toString().trim();
+      const emergRelation = (normalized['Quan hệ (LHKC)'] || normalized['Mối quan hệ khẩn cấp'] || normalized['Quan hệ khẩn cấp'] || normalized['Quan hệ'] || normalized['emergency_relation'] || 'Người thân').toString().trim();
+      const emergPhone = (normalized['ĐT di động (LHKC)'] || normalized['Số ĐT khẩn cấp'] || normalized['SĐT khẩn cấp'] || normalized['emergency_phone'] || '').toString().trim();
 
       const errors = [];
       const warnings = [];

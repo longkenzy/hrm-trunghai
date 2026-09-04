@@ -9,6 +9,7 @@ const appAccounts = {
   pageSize: 15,
   filteredAccounts: [],
   selectedAccountId: null,
+  selectedAccountIds: new Set(),
 
   init() {
     if (!this.initialized) {
@@ -81,16 +82,19 @@ const appAccounts = {
     if (pageItems.length === 0) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="8" style="text-align: center; padding: 24px; color: var(--text-muted);">
+          <td colspan="9" style="text-align: center; padding: 24px; color: var(--text-muted);">
             <i class="fa-solid fa-user-slash" style="font-size: 24px; margin-bottom: 8px; display: block;"></i>
             Không tìm thấy tài khoản phù hợp
           </td>
         </tr>
       `;
+      this.updateSelectAllHeader();
+      this.updateBulkActionsUI();
       return;
     }
 
     tbody.innerHTML = pageItems.map(a => {
+      const isChecked = this.selectedAccountIds.has(a.account_id);
       const isAdmin = a.role === 'ADMIN';
       const roleBadge = isAdmin ? 'badge-red' : 'badge-navy';
       const roleLabel = isAdmin ? '👑 Admin' : '👤 User';
@@ -100,7 +104,10 @@ const appAccounts = {
         : '<span class="badge badge-resigned"><i class="fa-solid fa-lock"></i> Đã khóa</span>';
 
       return `
-        <tr>
+        <tr class="${isChecked ? 'row-selected' : ''}">
+          <td style="text-align: center; width: 40px;">
+            <input type="checkbox" class="acc-row-checkbox" value="${a.account_id}" ${isChecked ? 'checked' : ''} onchange="appAccounts.toggleSelectAccount('${a.account_id}', this.checked)" style="accent-color: var(--primary-navy); width: 16px; height: 16px; cursor: pointer;">
+          </td>
           <td><strong style="color: var(--primary-navy);">${a.account_id || ''}</strong></td>
           <td><span class="badge badge-navy">${a.employee_id || ''}</span></td>
           <td><strong>${a.full_name || ''}</strong></td>
@@ -124,6 +131,9 @@ const appAccounts = {
         </tr>
       `;
     }).join('');
+
+    this.updateSelectAllHeader();
+    this.updateBulkActionsUI();
   },
 
   renderPagination() {
@@ -444,6 +454,7 @@ const appAccounts = {
       });
       const json = await res.json();
       if (json.success) {
+        this.selectedAccountIds.delete(this.selectedAccountId);
         appData.accounts = (appData.accounts || []).filter(a => a.account_id !== this.selectedAccountId);
         this.closeDeleteModal();
         this.renderKPIs();
@@ -455,6 +466,145 @@ const appAccounts = {
     } catch (err) {
       console.error(err);
       utils.showToast('Lỗi máy chủ', 'error');
+    }
+  },
+
+  // ==========================================
+  // BULK ACCOUNTS SELECTION & DELETION
+  // ==========================================
+  toggleSelectAccount(accId, isChecked) {
+    if (isChecked) {
+      this.selectedAccountIds.add(accId);
+    } else {
+      this.selectedAccountIds.delete(accId);
+    }
+    this.updateSelectAllHeader();
+    this.updateBulkActionsUI();
+  },
+
+  toggleSelectAll(isChecked) {
+    const start = (this.currentPage - 1) * this.pageSize;
+    const end = start + this.pageSize;
+    const pageItems = this.filteredAccounts.slice(start, end);
+
+    pageItems.forEach(a => {
+      if (isChecked) {
+        this.selectedAccountIds.add(a.account_id);
+      } else {
+        this.selectedAccountIds.delete(a.account_id);
+      }
+    });
+
+    document.querySelectorAll('.acc-row-checkbox').forEach(cb => {
+      cb.checked = isChecked;
+    });
+
+    this.updateSelectAllHeader();
+    this.updateBulkActionsUI();
+  },
+
+  updateSelectAllHeader() {
+    const selectAllEl = document.getElementById('acc-select-all');
+    if (!selectAllEl) return;
+
+    const start = (this.currentPage - 1) * this.pageSize;
+    const end = start + this.pageSize;
+    const pageItems = this.filteredAccounts.slice(start, end);
+
+    if (pageItems.length === 0) {
+      selectAllEl.checked = false;
+      selectAllEl.indeterminate = false;
+      return;
+    }
+
+    const checkedCount = pageItems.filter(a => this.selectedAccountIds.has(a.account_id)).length;
+    if (checkedCount === pageItems.length) {
+      selectAllEl.checked = true;
+      selectAllEl.indeterminate = false;
+    } else if (checkedCount > 0) {
+      selectAllEl.checked = false;
+      selectAllEl.indeterminate = true;
+    } else {
+      selectAllEl.checked = false;
+      selectAllEl.indeterminate = false;
+    }
+  },
+
+  updateBulkActionsUI() {
+    const bulkBtn = document.getElementById('btn-delete-selected-accounts');
+    const countEl = document.getElementById('acc-selected-count');
+    const count = this.selectedAccountIds.size;
+
+    if (countEl) countEl.textContent = count;
+    if (bulkBtn) {
+      bulkBtn.style.display = count > 0 ? 'inline-flex' : 'none';
+    }
+  },
+
+  openBulkDeleteModal() {
+    if (this.selectedAccountIds.size === 0) {
+      utils.showToast('Vui lòng tích chọn ít nhất một tài khoản để xóa', 'warning');
+      return;
+    }
+
+    const countEl = document.getElementById('bulk-delete-acc-count');
+    if (countEl) countEl.textContent = this.selectedAccountIds.size;
+
+    const modal = document.getElementById('modal-account-bulk-delete-confirm');
+    if (modal) modal.classList.add('active');
+  },
+
+  closeBulkDeleteModal() {
+    const modal = document.getElementById('modal-account-bulk-delete-confirm');
+    if (modal) modal.classList.remove('active');
+  },
+
+  async confirmBulkDeleteAccounts() {
+    const confirmBtn = document.getElementById('btn-confirm-bulk-delete-account');
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> <span>Đang xóa...</span>';
+    }
+
+    try {
+      const user = (typeof appAuth !== 'undefined' && typeof appAuth.getCurrentUser === 'function')
+        ? appAuth.getCurrentUser()
+        : (typeof appAuth !== 'undefined' && appAuth?.currentUser ? appAuth.currentUser : { employee_id: 'TH-1948', full_name: 'Huỳnh Thanh Long', role: 'ADMIN' });
+
+      const ids = Array.from(this.selectedAccountIds);
+
+      const res = await fetch('/api/accounts/delete-bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          account_ids: ids,
+          operator_id: user?.employee_id || 'TH-1948',
+          operator_name: user?.full_name || 'Huỳnh Thanh Long',
+          operator_role: user?.role || 'ADMIN'
+        })
+      });
+
+      const json = await res.json();
+      if (json.success) {
+        // Remove deleted accounts from local appData
+        const deletedSet = new Set(ids);
+        appData.accounts = (appData.accounts || []).filter(a => !deletedSet.has(a.account_id) && !deletedSet.has(a.employee_id));
+        this.selectedAccountIds.clear();
+        this.closeBulkDeleteModal();
+        this.renderKPIs();
+        this.applyFilters();
+        utils.showToast(json.message || `Đã xóa thành công ${json.count} tài khoản!`, 'success');
+      } else {
+        utils.showToast(json.message || 'Lỗi khi xóa tài khoản hàng loạt', 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      utils.showToast('Lỗi máy chủ khi xóa tài khoản: ' + err.message, 'error');
+    } finally {
+      if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.innerHTML = '<i class="fa-solid fa-trash-can"></i> <span>Xác Nhận Xóa</span>';
+      }
     }
   },
 
@@ -501,6 +651,12 @@ const appAccounts = {
           document.getElementById('acc-form-email').value = `${empId.toLowerCase()}@trunghaico.vn`;
         }
       });
+    }
+
+    // Select all accounts checkbox
+    const selectAllEl = document.getElementById('acc-select-all');
+    if (selectAllEl) {
+      selectAllEl.addEventListener('change', (e) => this.toggleSelectAll(e.target.checked));
     }
   }
 };

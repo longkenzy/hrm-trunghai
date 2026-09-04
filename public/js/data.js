@@ -5,6 +5,7 @@
 const appData = {
   isLoaded: false,
   tables: {},
+  companies: [],
   employees: [],
   departments: [],
   positions: [],
@@ -21,6 +22,7 @@ const appData = {
   company: {},
 
   // Lookup maps
+  companyMap: {},
   deptMap: {},
   posMap: {},
   empMap: {},
@@ -33,6 +35,7 @@ const appData = {
       if (json.success && json.tables) {
         this.tables = json.tables;
         this.company = json.company || {};
+        this.companies = json.tables['00_Companies'] || [];
         this.employees = (json.tables['03_Employees'] || []).sort((a, b) => (a.employee_id || '').localeCompare(b.employee_id || '', undefined, { numeric: true, sensitivity: 'base' }));
         this.departments = json.tables['01_Departments'] || [];
         this.positions = json.tables['02_Positions'] || [];
@@ -64,6 +67,11 @@ const appData = {
   },
 
   buildMaps() {
+    this.companyMap = {};
+    (this.companies || []).forEach(c => {
+      this.companyMap[c.company_id] = c.company_name;
+    });
+
     this.deptMap = {};
     this.departments.forEach(d => {
       this.deptMap[d.department_id] = d.department_name;

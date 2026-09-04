@@ -19,22 +19,18 @@ const appEmployees = {
   },
 
   populateFilterDropdowns() {
-    // Dept filter
+    // Dept filter for table
     const deptSelect = document.getElementById('emp-filter-dept');
-    const formDeptSelect = document.getElementById('form-dept-id');
-    if (deptSelect && formDeptSelect) {
+    if (deptSelect) {
       const opts = appData.departments.map(d => `<option value="${d.department_id}">${d.department_name}</option>`).join('');
       deptSelect.innerHTML = `<option value="">-- Tất cả Đơn vị / Phòng ban --</option>` + opts;
-      formDeptSelect.innerHTML = `<option value="">-- Chọn Đơn vị / Phòng ban --</option>` + opts;
     }
 
-    // Pos filter
+    // Pos filter for table
     const posSelect = document.getElementById('emp-filter-pos');
-    const formPosSelect = document.getElementById('form-pos-id');
-    if (posSelect && formPosSelect) {
+    if (posSelect) {
       const opts = appData.positions.map(p => `<option value="${p.position_id}">${p.position_name}</option>`).join('');
       posSelect.innerHTML = `<option value="">-- Tất cả Vị trí --</option>` + opts;
-      formPosSelect.innerHTML = `<option value="">-- Chọn Vị trí Công việc --</option>` + opts;
     }
 
     // Direct manager dropdown for form
@@ -43,6 +39,71 @@ const appEmployees = {
       const activeEmps = appData.employees.filter(e => e.employment_status === 'Đang làm việc');
       const opts = activeEmps.map(e => `<option value="${e.employee_id}">${e.full_name} (${e.employee_id})</option>`).join('');
       formMgrSelect.innerHTML = `<option value="">-- Không có / Tự quản lý --</option>` + opts;
+    }
+
+    // Initialize cascading Company -> Department -> Position in Employee Form
+    this.populateCompanyDeptPosDropdowns();
+  },
+
+  populateCompanyDeptPosDropdowns(selectedCompId = '', selectedDeptId = '', selectedPosId = '') {
+    const formCompSelect = document.getElementById('form-company-id');
+    const formDeptSelect = document.getElementById('form-dept-id');
+    const formPosSelect = document.getElementById('form-pos-id');
+    if (!formCompSelect || !formDeptSelect || !formPosSelect) return;
+
+    // 1. Populate Companies
+    const companies = appData.companies || [];
+    let compOpts = `<option value="">-- Chọn Công Ty Trực Thuộc --</option>`;
+    companies.forEach(c => {
+      compOpts += `<option value="${c.company_id}" ${c.company_id === selectedCompId ? 'selected' : ''}>${c.company_name} (${c.company_id})</option>`;
+    });
+    formCompSelect.innerHTML = compOpts;
+    if (selectedCompId) formCompSelect.value = selectedCompId;
+
+    // 2. Populate Departments (filtered by selected company if chosen)
+    const departments = appData.departments || [];
+    const filteredDepts = selectedCompId 
+      ? departments.filter(d => {
+          if (d.company_id === selectedCompId) return true;
+          // Fallback prefix match (e.g. TP-KT matches TP)
+          if (d.department_id && (d.department_id.startsWith(selectedCompId + '-') || d.department_id.startsWith(selectedCompId + '_'))) return true;
+          return false;
+        })
+      : departments;
+
+    // Auto-select if there's only 1 department in this company and none explicitly chosen
+    let activeDeptId = selectedDeptId;
+    if (!activeDeptId && selectedCompId && filteredDepts.length === 1) {
+      activeDeptId = filteredDepts[0].department_id;
+    }
+
+    let deptOpts = `<option value="">-- Chọn Phòng Ban --</option>`;
+    filteredDepts.forEach(d => {
+      const compLabel = (!selectedCompId && appData.companyMap[d.company_id]) ? ` [${appData.companyMap[d.company_id]}]` : '';
+      deptOpts += `<option value="${d.department_id}" ${d.department_id === activeDeptId ? 'selected' : ''}>${d.department_name}${compLabel}</option>`;
+    });
+    formDeptSelect.innerHTML = deptOpts;
+    if (activeDeptId) formDeptSelect.value = activeDeptId;
+
+    // 3. Populate Positions (Danh mục chức danh độc lập, không phụ thuộc phòng ban và công ty)
+    const positions = appData.positions || [];
+    let activePosId = selectedPosId;
+
+    let posOpts = `<option value="">-- Chọn Vị Trí Công Việc --</option>`;
+    positions.forEach(p => {
+      posOpts += `<option value="${p.position_id}" ${p.position_id === activePosId ? 'selected' : ''}>${p.position_name} (${p.position_id})</option>`;
+    });
+    formPosSelect.innerHTML = posOpts;
+    if (activePosId) formPosSelect.value = activePosId;
+
+    // Auto fill Job Title
+    if (activePosId) {
+      const posObj = positions.find(p => p.position_id === activePosId);
+      const titleInput = document.getElementById('form-job-title');
+      if (titleInput && (!titleInput.value.trim() || titleInput.dataset.autofilled === '1') && posObj) {
+        titleInput.value = posObj.position_name;
+        titleInput.dataset.autofilled = '1';
+      }
     }
   },
 
@@ -151,6 +212,66 @@ const appEmployees = {
     const exportFilteredBtn = document.getElementById('btn-export-filtered-emp');
     if (exportFilteredBtn) {
       exportFilteredBtn.addEventListener('click', () => this.exportFilteredExcel());
+    }
+
+    // Delete All Employees
+    const deleteAllBtn = document.getElementById('btn-delete-all-emp');
+    if (deleteAllBtn) {
+      deleteAllBtn.addEventListener('click', () => this.openDeleteAllModal());
+    }
+
+    // Delete All Confirmation Input Listener
+    const deleteAllInput = document.getElementById('delete-all-confirm-input');
+    if (deleteAllInput) {
+      deleteAllInput.addEventListener('input', (e) => {
+        const val = (e.target.value || '').trim().toUpperCase();
+        const confirmBtn = document.getElementById('btn-confirm-delete-all-action');
+        if (confirmBtn) {
+          const isValid = val === 'XOA TOAN BO';
+          confirmBtn.disabled = !isValid;
+          confirmBtn.style.opacity = isValid ? '1' : '0.5';
+          confirmBtn.style.cursor = isValid ? 'pointer' : 'not-allowed';
+        }
+      });
+    }
+
+    // Delete All Action Confirm Button
+    const confirmDeleteAllBtn = document.getElementById('btn-confirm-delete-all-action');
+    if (confirmDeleteAllBtn) {
+      confirmDeleteAllBtn.addEventListener('click', () => this.confirmDeleteAll());
+    }
+
+    // Cascading Company -> Department -> Position in Employee Form
+    const formCompSelect = document.getElementById('form-company-id');
+    const formDeptSelect = document.getElementById('form-dept-id');
+    const formPosSelect = document.getElementById('form-pos-id');
+
+    if (formCompSelect) {
+      formCompSelect.addEventListener('change', (e) => {
+        const compId = e.target.value;
+        this.populateCompanyDeptPosDropdowns(compId, '', '');
+      });
+    }
+
+    if (formDeptSelect) {
+      formDeptSelect.addEventListener('change', (e) => {
+        const deptId = e.target.value;
+        const dept = (appData.departments || []).find(d => d.department_id === deptId);
+        const compId = dept ? (dept.company_id || 'TH-CORP') : (formCompSelect ? formCompSelect.value : '');
+        this.populateCompanyDeptPosDropdowns(compId, deptId, '');
+      });
+    }
+
+    if (formPosSelect) {
+      formPosSelect.addEventListener('change', (e) => {
+        const posId = e.target.value;
+        const pos = (appData.positions || []).find(p => p.position_id === posId);
+        if (pos) {
+          const dept = (appData.departments || []).find(d => d.department_id === pos.department_id);
+          const compId = dept ? (dept.company_id || 'TH-CORP') : (formCompSelect ? formCompSelect.value : '');
+          this.populateCompanyDeptPosDropdowns(compId, pos.department_id || '', posId);
+        }
+      });
     }
   },
 
@@ -323,114 +444,132 @@ const appEmployees = {
       const { employee, contact, identity, emergency, education, salary, insurance, contracts, account } = json.data;
       this.selectedEmployee = employee;
 
+      // Safe helper to set textContent without throwing if an element is missing
+      const setVal = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = (val !== undefined && val !== null && val !== '') ? val : '-';
+      };
+
       // Header
-      document.getElementById('detail-modal-emp-name').textContent = `Hồ Sơ Nhân Viên: ${employee.full_name} (${employee.employee_id})`;
+      setVal('detail-modal-emp-name', `Hồ Sơ Nhân Viên: ${employee.full_name || ''} (${employee.employee_id || ''})`);
 
       // Tab 1: General
-      document.getElementById('det-emp-id').textContent = employee.employee_id || '-';
-      document.getElementById('det-time-code').textContent = employee.time_attendance_code || '-';
-      document.getElementById('det-full-name').textContent = employee.full_name || '-';
-      document.getElementById('det-gender').textContent = employee.gender || '-';
-      document.getElementById('det-dob').textContent = utils.formatDate(employee.date_of_birth);
-      document.getElementById('det-birth-place').textContent = employee.birth_place || '-';
-      document.getElementById('det-native-place').textContent = employee.native_place || '-';
-      document.getElementById('det-ethnicity-rel').textContent = `${employee.ethnicity || 'Kinh'} / ${employee.religion || 'Không'}`;
-      document.getElementById('det-marital-children').textContent = `${employee.marital_status || 'Độc thân'} (Số con: ${employee.children_count !== undefined ? employee.children_count : 0})`;
-      document.getElementById('det-dept-name').textContent = employee.department_name || employee.department_id || '-';
-      document.getElementById('det-pos-name').textContent = employee.position_name || employee.position_id || '-';
-      document.getElementById('det-job-rank').textContent = employee.job_rank || (salary.salary_grade ? `Cấp ${salary.salary_grade}` : 'Cấp 3');
-      document.getElementById('det-job-title').textContent = employee.job_title || employee.position_name || '-';
-      document.getElementById('det-work-loc').textContent = employee.work_location || 'Trụ sở Tổng công ty';
-      document.getElementById('det-direct-mgr').textContent = employee.direct_manager_name ? `${employee.direct_manager_name} (${employee.direct_manager_id || ''})` : '-';
-      document.getElementById('det-indirect-mgr').textContent = employee.indirect_manager_name ? `${employee.indirect_manager_name} (${employee.indirect_manager_id || ''})` : '-';
-      document.getElementById('det-labor-nature').textContent = employee.labor_nature || '-';
-      document.getElementById('det-emp-status').textContent = employee.employment_status || '-';
-      document.getElementById('det-start-date').textContent = utils.formatDate(employee.start_date || employee.trial_start_date);
-      document.getElementById('det-end-date').textContent = employee.end_date === 'Không xác định' ? 'Không xác định' : utils.formatDate(employee.end_date);
-      document.getElementById('det-official-date').textContent = utils.formatDate(employee.official_date) || utils.formatDate(employee.trial_start_date);
-      document.getElementById('det-seniority').textContent = employee.seniority_text || '-';
-      document.getElementById('det-other-certs').textContent = employee.other_certificates || (education && education[0] ? education[0].other_certificates : '') || 'Chứng chỉ An toàn Lao động';
+      setVal('det-emp-id', employee.employee_id);
+      setVal('det-time-code', employee.time_attendance_code);
+      setVal('det-full-name', employee.full_name);
+      setVal('det-gender', employee.gender);
+      setVal('det-dob', utils.formatDate(employee.date_of_birth));
+      setVal('det-birth-place', employee.birth_place);
+      setVal('det-native-place', employee.native_place);
+      setVal('det-ethnicity-rel', `${employee.ethnicity || 'Kinh'} / ${employee.religion || 'Không'}`);
+      setVal('det-marital-children', `${employee.marital_status || 'Độc thân'} (Số con: ${employee.children_count !== undefined ? employee.children_count : 0})`);
+      
+      const empDept = (appData.departments || []).find(d => d.department_id === employee.department_id);
+      const compId = employee.company_id || (empDept ? empDept.company_id : '') || 'TH-CORP';
+      const compName = appData.companyMap[compId] || 'Tổng Công Ty Trung Hải';
+      setVal('det-company-name', compName);
+
+      setVal('det-dept-name', employee.department_name || employee.department_id);
+      setVal('det-pos-name', employee.position_name || employee.position_id);
+      setVal('det-job-rank', employee.job_rank || (salary.salary_grade ? `Cấp ${salary.salary_grade}` : 'Cấp 3'));
+      setVal('det-job-title', employee.job_title || employee.position_name);
+      setVal('det-work-loc', employee.work_location || 'Trụ sở Tổng công ty');
+      setVal('det-direct-mgr', employee.direct_manager_name ? `${employee.direct_manager_name} (${employee.direct_manager_id || ''})` : '-');
+      setVal('det-indirect-mgr', employee.indirect_manager_name ? `${employee.indirect_manager_name} (${employee.indirect_manager_id || ''})` : '-');
+      setVal('det-labor-nature', employee.labor_nature);
+      setVal('det-emp-status', employee.employment_status);
+      setVal('det-start-date', utils.formatDate(employee.start_date || employee.trial_start_date));
+      setVal('det-end-date', employee.end_date === 'Không xác định' ? 'Không xác định' : utils.formatDate(employee.end_date));
+      setVal('det-official-date', utils.formatDate(employee.official_date) || utils.formatDate(employee.trial_start_date));
+      setVal('det-seniority', employee.seniority_text);
+      setVal('det-other-certs', employee.other_certificates || (education && education[0] ? education[0].other_certificates : '') || 'Chứng chỉ An toàn Lao động');
 
       // Tab 2: Contact
-      document.getElementById('det-mobile').textContent = contact.mobile_phone || '-';
-      document.getElementById('det-home-phone').textContent = contact.home_phone || '-';
-      document.getElementById('det-work-email').textContent = contact.work_email || '-';
-      document.getElementById('det-personal-email').textContent = contact.personal_email || '-';
-      document.getElementById('det-perm-addr').textContent = contact.permanent_address_full || '-';
-      document.getElementById('det-curr-addr').textContent = contact.current_address_full || '-';
+      setVal('det-mobile', contact.mobile_phone);
+      setVal('det-home-phone', contact.home_phone);
+      setVal('det-work-email', contact.work_email);
+      setVal('det-personal-email', contact.personal_email);
+      setVal('det-perm-addr', contact.permanent_address_full);
+      setVal('det-curr-addr', contact.current_address_full);
 
       // Tab 3: Identity
-      document.getElementById('det-id-type').textContent = identity.doc_type || 'CCCD';
-      document.getElementById('det-id-num').textContent = identity.id_number || '-';
-      document.getElementById('det-id-date').textContent = utils.formatDate(identity.id_issue_date);
-      document.getElementById('det-id-place').textContent = identity.id_issue_place || '-';
-      document.getElementById('det-id-exp').textContent = utils.formatDate(identity.id_expiry_date);
-      document.getElementById('det-tax-code').textContent = employee.tax_code || '-';
-      document.getElementById('det-passport-num').textContent = identity.passport_number || '-';
-      document.getElementById('det-passport-date').textContent = utils.formatDate(identity.passport_issue_date);
+      setVal('det-id-type', identity.doc_type || 'CCCD');
+      setVal('det-id-num', identity.id_number);
+      setVal('det-id-date', utils.formatDate(identity.id_issue_date));
+      setVal('det-id-place', identity.id_issue_place);
+      setVal('det-id-exp', utils.formatDate(identity.id_expiry_date));
+      setVal('det-tax-code', employee.tax_code);
+      setVal('det-passport-num', identity.passport_number);
+      setVal('det-passport-date', utils.formatDate(identity.passport_issue_date));
 
       // Tab 4: Emergency
       const emContainer = document.getElementById('det-emergency-container');
-      if (emergency && emergency.length > 0) {
-        emContainer.innerHTML = emergency.map(em => `
-          <div class="info-item"><span class="info-label">Họ và Tên Thân Nhân</span><span class="info-value">${em.contact_name || '-'}</span></div>
-          <div class="info-item"><span class="info-label">Mối Quan Hệ</span><span class="info-value">${em.relationship || '-'}</span></div>
-          <div class="info-item"><span class="info-label">Số ĐT Liên Hệ</span><span class="info-value">${em.mobile_phone || '-'}</span></div>
-          <div class="info-item"><span class="info-label">Email Thân Nhân</span><span class="info-value">${em.email || '-'}</span></div>
-          <div class="info-item" style="grid-column: 1 / -1;"><span class="info-label">Địa Chỉ</span><span class="info-value">${em.address || '-'}</span></div>
-        `).join('');
-      } else {
-        emContainer.innerHTML = `<div style="grid-column: 1 / -1; color: var(--text-muted); text-align: center; padding: 20px;">Chưa có thông tin người liên hệ khẩn cấp.</div>`;
+      if (emContainer) {
+        if (emergency && emergency.length > 0) {
+          emContainer.innerHTML = emergency.map(em => `
+            <div class="info-item"><span class="info-label">Họ và Tên Thân Nhân</span><span class="info-value">${em.contact_name || '-'}</span></div>
+            <div class="info-item"><span class="info-label">Mối Quan Hệ</span><span class="info-value">${em.relationship || '-'}</span></div>
+            <div class="info-item"><span class="info-label">Số ĐT Liên Hệ</span><span class="info-value">${em.mobile_phone || '-'}</span></div>
+            <div class="info-item"><span class="info-label">Email Thân Nhân</span><span class="info-value">${em.email || '-'}</span></div>
+            <div class="info-item" style="grid-column: 1 / -1;"><span class="info-label">Địa Chỉ</span><span class="info-value">${em.address || '-'}</span></div>
+          `).join('');
+        } else {
+          emContainer.innerHTML = `<div style="grid-column: 1 / -1; color: var(--text-muted); text-align: center; padding: 20px;">Chưa có thông tin người liên hệ khẩn cấp.</div>`;
+        }
       }
 
       // Tab 5: Education
       const eduContainer = document.getElementById('det-education-container');
-      if (education && education.length > 0) {
-        eduContainer.innerHTML = education.map(ed => `
-          <div class="info-item"><span class="info-label">Trình Độ Văn Hóa</span><span class="info-value">${ed.education_level || 'Đại học'}</span></div>
-          <div class="info-item"><span class="info-label">Trình Độ Đào Tạo</span><span class="info-value">${ed.degree_type || 'Chính quy'}</span></div>
-          <div class="info-item"><span class="info-label">Cơ Sở Đào Tạo (Trường)</span><span class="info-value">${ed.institution || '-'}</span></div>
-          <div class="info-item"><span class="info-label">Khoa / Bộ Môn</span><span class="info-value">${ed.faculty || '-'}</span></div>
-          <div class="info-item"><span class="info-label">Chuyên Ngành Tốt Nghiệp</span><span class="info-value">${ed.major || '-'}</span></div>
-          <div class="info-item"><span class="info-label">Năm Tốt Nghiệp / Xếp Loại</span><span class="info-value">${ed.graduation_year || '-'} (${ed.classification || '-'})</span></div>
-          <div class="info-item" style="grid-column: 1 / -1;"><span class="info-label">Bằng Cấp Chuyên Môn Khác</span><span class="info-value" style="color: #059669;">${ed.other_certificates || employee.other_certificates || '-'}</span></div>
-        `).join('');
-      } else {
-        eduContainer.innerHTML = `<div style="grid-column: 1 / -1; color: var(--text-muted); text-align: center; padding: 20px;">Chưa có thông tin văn bằng / học vị.</div>`;
+      if (eduContainer) {
+        if (education && education.length > 0) {
+          eduContainer.innerHTML = education.map(ed => `
+            <div class="info-item"><span class="info-label">Trình Độ Văn Hóa</span><span class="info-value">${ed.education_level || 'Đại học'}</span></div>
+            <div class="info-item"><span class="info-label">Trình Độ Đào Tạo</span><span class="info-value">${ed.degree_type || 'Chính quy'}</span></div>
+            <div class="info-item"><span class="info-label">Cơ Sở Đào Tạo (Trường)</span><span class="info-value">${ed.institution || '-'}</span></div>
+            <div class="info-item"><span class="info-label">Khoa / Bộ Môn</span><span class="info-value">${ed.faculty || '-'}</span></div>
+            <div class="info-item"><span class="info-label">Chuyên Ngành Tốt Nghiệp</span><span class="info-value">${ed.major || '-'}</span></div>
+            <div class="info-item"><span class="info-label">Năm Tốt Nghiệp / Xếp Loại</span><span class="info-value">${ed.graduation_year || '-'} (${ed.classification || '-'})</span></div>
+            <div class="info-item" style="grid-column: 1 / -1;"><span class="info-label">Bằng Cấp Chuyên Môn Khác</span><span class="info-value" style="color: #059669;">${ed.other_certificates || employee.other_certificates || '-'}</span></div>
+          `).join('');
+        } else {
+          eduContainer.innerHTML = `<div style="grid-column: 1 / -1; color: var(--text-muted); text-align: center; padding: 20px;">Chưa có thông tin văn bằng / học vị.</div>`;
+        }
       }
 
       // Tab 6: Salary
-      document.getElementById('det-salary-grade').textContent = salary.salary_grade || '1';
-      document.getElementById('det-base-salary').textContent = utils.formatCurrency(salary.base_salary);
-      document.getElementById('det-total-salary').textContent = utils.formatCurrency(salary.total_salary);
-      document.getElementById('det-ins-salary').textContent = utils.formatCurrency(salary.insurance_salary);
-      document.getElementById('det-bank-acc').textContent = salary.bank_account_number || '-';
-      document.getElementById('det-bank-name').textContent = salary.bank_name || '-';
-      document.getElementById('det-bank-branch').textContent = salary.bank_branch || '-';
+      setVal('det-salary-grade', salary.salary_grade || '1');
+      setVal('det-base-salary', utils.formatCurrency(salary.base_salary));
+      setVal('det-total-salary', utils.formatCurrency(salary.total_salary));
+      setVal('det-ins-salary', utils.formatCurrency(salary.insurance_salary));
+      setVal('det-bank-acc', salary.bank_account_number);
+      setVal('det-bank-name', salary.bank_name);
+      setVal('det-bank-branch', salary.bank_branch);
 
       // Tab 7: Insurance
-      document.getElementById('det-has-ins').textContent = insurance.has_insurance || 'Không tham gia';
-      document.getElementById('det-bhxh-code').textContent = insurance.social_insurance_code || '-';
-      document.getElementById('det-bhxh-book').textContent = insurance.social_insurance_book_no || '-';
-      document.getElementById('det-ins-date').textContent = utils.formatDate(insurance.insurance_join_date);
-      document.getElementById('det-ins-rate').textContent = '10.5% (BHXH 8%, BHYT 1.5%, BHTN 1%)';
-      document.getElementById('det-hospital').textContent = insurance.hospital_registered || '-';
-      document.getElementById('det-union').textContent = insurance.union_member || 'Không';
+      setVal('det-has-ins', insurance.has_insurance || 'Không tham gia');
+      setVal('det-bhxh-code', insurance.social_insurance_code);
+      setVal('det-bhxh-book', insurance.social_insurance_book_no);
+      setVal('det-ins-date', utils.formatDate(insurance.insurance_join_date));
+      setVal('det-ins-rate', '10.5% (BHXH 8%, BHYT 1.5%, BHTN 1%)');
+      setVal('det-hospital', insurance.hospital_registered);
+      setVal('det-union', insurance.union_member || 'Không');
 
       // Tab 8: Contract & Account
       const firstContract = contracts && contracts.length > 0 ? contracts[0] : {};
-      document.getElementById('det-contract-id').textContent = firstContract.contract_id || '-';
-      document.getElementById('det-contract-type').textContent = firstContract.contract_type || employee.contract_type || 'Hợp đồng lao động';
-      document.getElementById('det-contract-status').textContent = firstContract.contract_status || 'HIỆU LỰC';
-      document.getElementById('det-acc-email').textContent = account.account_email || `${employee.employee_id.toLowerCase()}@trunghaico.vn`;
-      document.getElementById('det-acc-role').textContent = account.role || 'USER';
-      document.getElementById('det-acc-status').textContent = account.account_status || 'Đã kích hoạt';
+      setVal('det-contract-id', firstContract.contract_id);
+      setVal('det-contract-type', firstContract.contract_type || employee.contract_type || 'Hợp đồng lao động');
+      setVal('det-contract-status', firstContract.contract_status || 'HIỆU LỰC');
+      setVal('det-acc-email', account.account_email || `${(employee.employee_id || '').toLowerCase()}@trunghaico.vn`);
+      setVal('det-acc-role', account.role || 'USER');
+      setVal('det-acc-status', account.account_status || 'Đã kích hoạt');
 
       // Reset to Tab 1
-      document.querySelector('#modal-employee-detail .modal-tab-btn[data-tab="tab-general"]').click();
+      const defaultTabBtn = document.querySelector('#modal-employee-detail .modal-tab-btn[data-tab="tab-general"]');
+      if (defaultTabBtn) defaultTabBtn.click();
 
       // Show modal
-      document.getElementById('modal-employee-detail').classList.add('active');
+      const modalEl = document.getElementById('modal-employee-detail');
+      if (modalEl) modalEl.classList.add('active');
     } catch (e) {
       console.error(e);
       utils.showToast('Lỗi khi mở hồ sơ nhân viên', 'error');
@@ -443,6 +582,8 @@ const appEmployees = {
 
   openAddModal() {
     document.getElementById('form-is-edit').value = '0';
+    const oldInput = document.getElementById('form-old-emp-id');
+    if (oldInput) oldInput.value = '';
     document.getElementById('form-modal-title').textContent = 'Thêm Nhân Viên Mới (Đầy Đủ 34 Cột)';
     document.getElementById('form-modal-icon').className = 'fa-solid fa-user-plus';
     document.getElementById('form-emp-id').value = '';
@@ -466,6 +607,16 @@ const appEmployees = {
 
     // Switch to Tab 1
     document.querySelector('.form-tab-btn[data-tab="form-tab-personal"]').click();
+
+    // Cascading dropdowns: default company, dept, pos from available settings
+    const defaultCompId = (appData.companies && appData.companies[0]?.company_id) || 'TH-CORP';
+    const firstDept = (appData.departments || []).find(d => (d.company_id || 'TH-CORP') === defaultCompId);
+    const defaultDeptId = firstDept ? firstDept.department_id : ((appData.departments && appData.departments[0]?.department_id) || '');
+    const firstPos = (appData.positions || []).find(p => p.department_id === defaultDeptId);
+    const defaultPosId = firstPos ? firstPos.position_id : ((appData.positions && appData.positions[0]?.position_id) || '');
+
+    this.populateCompanyDeptPosDropdowns(defaultCompId, defaultDeptId, defaultPosId);
+
     document.getElementById('modal-employee-form').classList.add('active');
   },
 
@@ -484,12 +635,13 @@ const appEmployees = {
       const firstEdu = education && education.length > 0 ? education[0] : {};
 
       document.getElementById('form-is-edit').value = '1';
+      document.getElementById('form-old-emp-id').value = empId;
       document.getElementById('form-modal-title').textContent = `Chỉnh Sửa Hồ Sơ: ${employee.full_name} (${empId})`;
       document.getElementById('form-modal-icon').className = 'fa-solid fa-user-pen';
       
-      // Tab 1: Personal
-      document.getElementById('form-emp-id').value = employee.employee_id || '';
-      document.getElementById('form-emp-id').readOnly = true;
+      // Tab 1: Personal (Mã nhân viên có thể thay đổi được khi chỉnh sửa)
+      document.getElementById('form-emp-id').value = employee.employee_id || empId;
+      document.getElementById('form-emp-id').readOnly = false;
       document.getElementById('form-full-name').value = employee.full_name || '';
       document.getElementById('form-gender').value = employee.gender || 'Nam';
       document.getElementById('form-dob').value = employee.date_of_birth || '';
@@ -501,9 +653,10 @@ const appEmployees = {
       document.getElementById('form-children-count').value = employee.children_count !== undefined ? employee.children_count : 0;
       document.getElementById('form-tax-code').value = employee.tax_code || '';
 
-      // Tab 2: Job & Contract
-      document.getElementById('form-dept-id').value = employee.department_id || '';
-      document.getElementById('form-pos-id').value = employee.position_id || '';
+      // Tab 2: Job & Contract (Cascading Company -> Dept -> Position)
+      const empDept = (appData.departments || []).find(d => d.department_id === employee.department_id);
+      const compId = employee.company_id || (empDept ? empDept.company_id : '') || 'TH-CORP';
+      this.populateCompanyDeptPosDropdowns(compId, employee.department_id || '', employee.position_id || '');
       document.getElementById('form-job-rank').value = employee.job_rank || (salary.salary_grade ? `Cấp ${salary.salary_grade} - Kỹ sư Chính` : 'Cấp 3 - Chuyên viên / Nhân viên Nghiệp vụ');
       document.getElementById('form-job-title').value = employee.job_title || '';
       document.getElementById('form-work-location').value = employee.work_location || 'Trụ sở Tổng công ty - Tòa nhà Trung Hải, Hà Nội';
@@ -556,7 +709,13 @@ const appEmployees = {
   async handleFormSubmit(e) {
     e.preventDefault();
     const isEdit = document.getElementById('form-is-edit').value === '1';
+    const oldEmpId = (document.getElementById('form-old-emp-id')?.value || '').trim();
     const empId = document.getElementById('form-emp-id').value.trim();
+
+    if (!empId) {
+      utils.showToast('Vui lòng nhập Mã nhân viên', 'error');
+      return;
+    }
 
     const payload = {
       employee_id: empId,
@@ -571,6 +730,7 @@ const appEmployees = {
       children_count: parseInt(document.getElementById('form-children-count').value, 10) || 0,
       tax_code: document.getElementById('form-tax-code').value.trim(),
 
+      company_id: document.getElementById('form-company-id')?.value || '',
       department_id: document.getElementById('form-dept-id').value,
       position_id: document.getElementById('form-pos-id').value,
       job_rank: document.getElementById('form-job-rank').value,
@@ -613,7 +773,8 @@ const appEmployees = {
     };
 
     try {
-      const url = isEdit ? `/api/employees/${empId}` : '/api/employees';
+      const targetIdForUrl = (isEdit && oldEmpId) ? oldEmpId : empId;
+      const url = isEdit ? `/api/employees/${encodeURIComponent(targetIdForUrl)}` : '/api/employees';
       const method = isEdit ? 'PUT' : 'POST';
 
       const res = await fetch(url, {
@@ -827,5 +988,131 @@ const appEmployees = {
     XLSX.utils.book_append_sheet(wb, ws, "DanhSachNhanSu");
     XLSX.writeFile(wb, `Danh_Sach_Nhan_Su_Trung_Hai_${new Date().toISOString().slice(0,10)}.xlsx`);
     utils.showToast('Xuất danh sách nhân sự Excel thành công!', 'success');
+  },
+
+  openDeleteAllModal() {
+    const totalEmployees = (appData.employees || []).length;
+    if (totalEmployees === 0) {
+      utils.showToast('Hiện không có hồ sơ nhân sự nào trong hệ thống', 'info');
+      return;
+    }
+
+    const countEl = document.getElementById('delete-all-total-count');
+    if (countEl) countEl.textContent = utils.formatNumber(totalEmployees);
+
+    // Calculate employees with accounts
+    const accountEmpIds = new Set((appData.accounts || []).map(a => a.employee_id).filter(Boolean));
+    accountEmpIds.add('TH-0001');
+    accountEmpIds.add('TH-1948');
+    const keptEmployees = appData.employees.filter(e => accountEmpIds.has(e.employee_id));
+    const actualDeleteCount = Math.max(0, totalEmployees - keptEmployees.length);
+
+    const keptEl = document.getElementById('delete-all-kept-count');
+    if (keptEl) keptEl.textContent = utils.formatNumber(keptEmployees.length);
+
+    const actualEl = document.getElementById('delete-all-actual-count');
+    if (actualEl) actualEl.textContent = utils.formatNumber(actualDeleteCount);
+
+    const keepCheckbox = document.getElementById('delete-all-keep-accounts');
+    if (keepCheckbox) {
+      keepCheckbox.checked = true;
+      keepCheckbox.onchange = () => {
+        if (actualEl) {
+          actualEl.textContent = utils.formatNumber(keepCheckbox.checked ? actualDeleteCount : totalEmployees);
+        }
+      };
+    }
+
+    const inputEl = document.getElementById('delete-all-confirm-input');
+    if (inputEl) inputEl.value = '';
+
+    const confirmBtn = document.getElementById('btn-confirm-delete-all-action');
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.style.opacity = '0.5';
+      confirmBtn.style.cursor = 'not-allowed';
+      confirmBtn.innerHTML = '<i class="fa-solid fa-trash-can"></i> <span>Xóa Toàn Bộ</span>';
+    }
+
+    // Reset radio to default (recycle)
+    const recycleRadio = document.querySelector('input[name="delete-all-mode"][value="recycle"]');
+    if (recycleRadio) recycleRadio.checked = true;
+
+    const modal = document.getElementById('modal-delete-all-employees');
+    if (modal) modal.classList.add('active');
+  },
+
+  closeDeleteAllModal() {
+    const modal = document.getElementById('modal-delete-all-employees');
+    if (modal) modal.classList.remove('active');
+    const inputEl = document.getElementById('delete-all-confirm-input');
+    if (inputEl) inputEl.value = '';
+  },
+
+  async confirmDeleteAll() {
+    const confirmBtn = document.getElementById('btn-confirm-delete-all-action');
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> <span>Đang xử lý...</span>';
+    }
+
+    const mode = document.querySelector('input[name="delete-all-mode"]:checked')?.value;
+    const isPermanent = mode === 'permanent';
+    const keepAccounts = document.getElementById('delete-all-keep-accounts')?.checked !== false;
+
+    try {
+      const user = (typeof appAuth !== 'undefined' && typeof appAuth.getCurrentUser === 'function')
+        ? appAuth.getCurrentUser()
+        : (typeof appAuth !== 'undefined' && appAuth?.currentUser ? appAuth.currentUser : { employee_id: 'TH-1948', full_name: 'Huỳnh Thanh Long', role: 'ADMIN' });
+
+      const res = await fetch('/api/employees/all', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          permanent: isPermanent,
+          keep_accounts: keepAccounts,
+          operator_id: user?.employee_id || 'TH-1948',
+          operator_name: user?.full_name || 'Huỳnh Thanh Long',
+          operator_role: user?.role || 'ADMIN'
+        })
+      });
+
+      const json = await res.json();
+
+      if (json.success) {
+        utils.showToast(json.message || `Đã xóa thành công ${json.count || ''} nhân sự`, 'success');
+        this.closeDeleteAllModal();
+        
+        // Reload all cached application data
+        await appData.init();
+
+        // Refresh views and dashboards
+        if (typeof appDashboard !== 'undefined' && typeof appDashboard.init === 'function') {
+          appDashboard.init();
+        }
+        if (typeof appTrash !== 'undefined' && typeof appTrash.render === 'function') {
+          appTrash.render();
+        }
+        if (typeof appLogs !== 'undefined' && typeof appLogs.render === 'function') {
+          appLogs.render();
+        }
+
+        // Reapply filter for empty state display
+        this.currentPage = 1;
+        this.applyFilters();
+      } else {
+        utils.showToast(json.message || 'Lỗi khi xóa toàn bộ nhân sự', 'error');
+        if (confirmBtn) {
+          confirmBtn.disabled = false;
+          confirmBtn.innerHTML = '<i class="fa-solid fa-trash-can"></i> <span>Xóa Toàn Bộ</span>';
+        }
+      }
+    } catch (e) {
+      utils.showToast('Lỗi kết nối khi xóa nhân sự: ' + e.message, 'error');
+      if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.innerHTML = '<i class="fa-solid fa-trash-can"></i> <span>Xóa Toàn Bộ</span>';
+      }
+    }
   }
 };

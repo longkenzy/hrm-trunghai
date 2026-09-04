@@ -40,6 +40,8 @@ const app = {
     appTrash.init();
 
     // 4. Update sidebar count badges
+    const sideCompCount = document.getElementById('sidebar-company-count');
+    if (sideCompCount) sideCompCount.textContent = (appData.companies || []).length;
     const sideDeptCount = document.getElementById('sidebar-dept-count');
     if (sideDeptCount) sideDeptCount.textContent = (appData.departments || []).length;
     const sidePosCount = document.getElementById('sidebar-pos-count');
@@ -92,8 +94,10 @@ const app = {
     const titles = {
       'dashboard': '<i class="fa-solid fa-chart-pie"></i> <span>Dashboard Thống Kê</span>',
       'employees': '<i class="fa-solid fa-users"></i> <span>Quản Lý Nhân Sự</span>',
+      'companies': '<i class="fa-solid fa-city"></i> <span>Danh Sách Công Ty</span>',
       'departments': '<i class="fa-solid fa-building"></i> <span>Danh Sách Phòng Ban</span>',
       'positions': '<i class="fa-solid fa-briefcase"></i> <span>Vị Trí Công Việc</span>',
+      'org-chart': '<i class="fa-solid fa-sitemap"></i> <span>Sơ Đồ Cơ Cấu Tổ Chức</span>',
       'contracts': '<i class="fa-solid fa-file-contract"></i> <span>Hợp Đồng & Cảnh Báo</span>',
       'resigned': '<i class="fa-solid fa-user-xmark"></i> <span>Quản Lý Nhân Sự Nghỉ Việc</span>',
       'reports': '<i class="fa-solid fa-chart-line"></i> <span>Báo Cáo Biến Động Nhân Sự</span>',
@@ -128,10 +132,14 @@ const app = {
           appReports.render();
         } else if (viewId === 'resigned') {
           appResigned.render();
+        } else if (viewId === 'companies') {
+          appOrganization.renderCompaniesTable();
         } else if (viewId === 'departments') {
           appOrganization.renderDepartmentsTable();
         } else if (viewId === 'positions') {
           appOrganization.renderPositionsTable();
+        } else if (viewId === 'org-chart') {
+          appOrganization.renderOrgChart();
         } else if (viewId === 'contracts') {
           appOrganization.renderContractsTable();
         } else if (viewId === 'accounts') {

@@ -20,6 +20,7 @@ if (fs.existsSync(DB_JSON_PATH)) {
 }
 
 const dataDictionary = originalDb.tables['00_Data_Dictionary'] || [];
+const companies = originalDb.tables['00_Companies'] || [];
 const departments = originalDb.tables['01_Departments'] || [];
 const positions = originalDb.tables['02_Positions'] || [];
 
@@ -197,6 +198,7 @@ function padZero(num, size = 2) {
 const TOTAL_EMPLOYEES = 1000;
 
 const tables = {
+    '00_Companies': companies,
     '00_Master_Profiles': [], // Unified 34-column Master Sheet
     '00_Data_Dictionary': dataDictionary,
     '01_Departments': departments,
