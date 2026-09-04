@@ -311,6 +311,8 @@ async function exportAllToGoogleSheets(db, customSpreadsheetId) {
         try {
             await exportTableToGoogleSheets(tableName, rows, spreadsheetId);
             results.push({ table: tableName, rows: rows.length, success: true });
+            // Gentle delay between table writes to stay safely within Google Sheets quota limit
+            await new Promise(r => setTimeout(r, 120));
         } catch (err) {
             console.error(`[Google Sheets] Lỗi đồng bộ bảng "${tableName}":`, err.message);
             results.push({ table: tableName, rows: rows.length, success: false, error: err.message });
@@ -320,7 +322,7 @@ async function exportAllToGoogleSheets(db, customSpreadsheetId) {
     return { success: true, results };
 }
 
-// Import ALL tables from Google Sheets into local format
+// Import ALL tables from Google Sheets into local format (Optimized with batchGet)
 async function importAllFromGoogleSheets(customSpreadsheetId) {
     const cfg = getConfig();
     const spreadsheetId = customSpreadsheetId || cfg.spreadsheetId;
@@ -331,34 +333,70 @@ async function importAllFromGoogleSheets(customSpreadsheetId) {
     const sheets = getSheetsClient();
     const meta = await sheets.spreadsheets.get({ spreadsheetId });
     const sheetTitles = (meta.data.sheets || []).map(s => s.properties.title);
+    if (sheetTitles.length === 0) {
+        return { tables: {} };
+    }
 
     const tables = {};
-    for (const title of sheetTitles) {
-        try {
-            const res = await sheets.spreadsheets.values.get({
-                spreadsheetId,
-                range: `'${title}'!A1:ZZ50000`,
-                valueRenderOption: 'UNFORMATTED_VALUE'
-            });
-            const rows = res.data.values || [];
+
+    try {
+        // Fast single batchGet request for all sheets
+        const batchRes = await sheets.spreadsheets.values.batchGet({
+            spreadsheetId,
+            ranges: sheetTitles.map(title => `'${title}'!A1:ZZ50000`),
+            valueRenderOption: 'UNFORMATTED_VALUE'
+        });
+
+        const valueRanges = batchRes.data.valueRanges || [];
+        sheetTitles.forEach((title, idx) => {
+            const vr = valueRanges[idx];
+            const rows = (vr && vr.values) ? vr.values : [];
             if (rows.length === 0) {
                 tables[title] = [];
-                continue;
+                return;
             }
 
             const headers = rows[0];
             const dataRows = rows.slice(1).map(r => {
                 const obj = {};
-                headers.forEach((h, idx) => {
+                headers.forEach((h, hIdx) => {
                     if (h) {
-                        obj[h] = r[idx] !== undefined ? r[idx] : null;
+                        obj[h] = r[hIdx] !== undefined ? r[hIdx] : null;
                     }
                 });
                 return obj;
             });
             tables[title] = dataRows;
-        } catch (e) {
-            console.error(`Lỗi đọc sheet ${title}:`, e.message);
+        });
+    } catch (batchErr) {
+        console.warn('batchGet failed, falling back to sequential get:', batchErr.message);
+        for (const title of sheetTitles) {
+            try {
+                const res = await sheets.spreadsheets.values.get({
+                    spreadsheetId,
+                    range: `'${title}'!A1:ZZ50000`,
+                    valueRenderOption: 'UNFORMATTED_VALUE'
+                });
+                const rows = res.data.values || [];
+                if (rows.length === 0) {
+                    tables[title] = [];
+                    continue;
+                }
+
+                const headers = rows[0];
+                const dataRows = rows.slice(1).map(r => {
+                    const obj = {};
+                    headers.forEach((h, idx) => {
+                        if (h) {
+                            obj[h] = r[idx] !== undefined ? r[idx] : null;
+                        }
+                    });
+                    return obj;
+                });
+                tables[title] = dataRows;
+            } catch (e) {
+                console.error(`Lỗi đọc sheet ${title}:`, e.message);
+            }
         }
     }
 

@@ -209,7 +209,7 @@ function syncToExcelFile(db) {
 }
 
 // Helper to save DB (Serverless-safe with in-memory and /tmp fallback)
-function saveDatabase(data) {
+function saveDatabase(data, skipGoogleSync = false) {
     inMemoryDb = data;
     let saved = false;
 
@@ -231,9 +231,11 @@ function saveDatabase(data) {
         setTimeout(() => syncToExcelFile(data), 10);
     } catch (e) {}
 
-    try {
-        googleSheets.triggerBackgroundSync(data);
-    } catch (e) {}
+    if (!skipGoogleSync) {
+        try {
+            googleSheets.triggerBackgroundSync(data);
+        } catch (e) {}
+    }
 
     return saved;
 }
@@ -263,9 +265,58 @@ function recordLog(db, { action_type, module, description, user_id, user_name, u
     return logEntry;
 }
 
-// ==========================================
-// API ENDPOINTS
-// ==========================================
+// Cloud Cache Timer & Synchronization Handler
+let lastCloudSyncTime = 0;
+const CLOUD_CACHE_TTL_MS = 20000; // 20s cache window to avoid hitting Google quota
+let isSyncingFromCloud = false;
+
+async function syncWithGoogleSheetsIfConfigured(force = false) {
+    const cfg = googleSheets.getConfig();
+    if (!cfg.is_setup_completed || !cfg.spreadsheetId) {
+        return null;
+    }
+
+    const now = Date.now();
+    // Use cached in-memory database if still valid
+    if (!force && inMemoryDb && (now - lastCloudSyncTime < CLOUD_CACHE_TTL_MS)) {
+        return inMemoryDb;
+    }
+
+    if (isSyncingFromCloud) {
+        return inMemoryDb;
+    }
+
+    isSyncingFromCloud = true;
+    try {
+        console.log('[Google Sheets Auto-Sync] Đang nạp dữ liệu mới nhất từ Google Sheets...');
+        const cloudData = await googleSheets.importAllFromGoogleSheets();
+        if (cloudData && cloudData.tables && Object.keys(cloudData.tables).length > 0) {
+            let current = loadDatabase();
+            current.tables = { ...current.tables, ...cloudData.tables };
+            inMemoryDb = current;
+            lastCloudSyncTime = now;
+            saveDatabase(current, true); // Do NOT re-export back to Google Sheets on import!
+            console.log('[Google Sheets Auto-Sync] Đồng bộ thành công!');
+            return current;
+        }
+    } catch (err) {
+        console.warn('⚠️ Tự động đồng bộ Google Sheets không thành công (dùng bản đệm):', err.message);
+    } finally {
+        isSyncingFromCloud = false;
+    }
+
+    return null;
+}
+
+// Auto-sync middleware for read requests when Google Sheets is connected
+app.use(async (req, res, next) => {
+    if (req.method === 'GET' && (req.path === '/api/data' || req.path === '/api/stats' || req.path === '/api/employees')) {
+        if (!inMemoryDb || (Date.now() - lastCloudSyncTime > CLOUD_CACHE_TTL_MS) || req.query.refresh === 'true') {
+            await syncWithGoogleSheetsIfConfigured(req.query.refresh === 'true');
+        }
+    }
+    next();
+});
 
 // 1. GET FULL DATABASE
 app.get('/api/data', (req, res) => {
@@ -4430,8 +4481,18 @@ app.post('/api/setup/complete', async (req, res) => {
         const adminTitle = admin?.job_title || 'Giám Đốc Quản Trị Hệ Thống';
 
         if (dataOption === 'CLEAN') {
-            // Clean database: reset tables and create 1 admin
+            // Clean database: reset tables and create only 1 admin account
+            const defaultCompany = [{
+                company_id: 'CP-01',
+                company_name: 'CÔNG TY TNHH',
+                tax_code: '',
+                phone: '',
+                email: '',
+                address: '',
+                status: 'Hoạt động'
+            }];
             db.tables = {
+                '00_Companies': defaultCompany,
                 '00_Master_Profiles': [{
                     employee_id: adminId,
                     full_name: adminName,
@@ -4445,6 +4506,7 @@ app.post('/api/setup/complete', async (req, res) => {
                     gender: 'Nam',
                     join_date: new Date().toISOString().split('T')[0]
                 }],
+                '00_Data_Dictionary': db.tables['00_Data_Dictionary'] || [],
                 '01_Departments': [
                     { department_id: 'BGD', department_name: 'Ban Giám Đốc', parent_dept_id: '', manager_id: adminId, status: 'Hoạt động' },
                     { department_id: 'HR', department_name: 'Phòng Hành Chính Nhân Sự', parent_dept_id: 'BGD', manager_id: '', status: 'Hoạt động' },
@@ -4473,7 +4535,15 @@ app.post('/api/setup/complete', async (req, res) => {
                 '07_Education': [],
                 '08_Salaries_Banks': [],
                 '09_Insurance_Welfare': [],
-                '10_Contracts': [],
+                '10_Contracts': [{
+                    contract_id: adminId,
+                    employee_id: adminId,
+                    full_name: adminName,
+                    contract_type: 'Hợp đồng lao động không xác định thời hạn',
+                    trial_start_date: new Date().toISOString().split('T')[0],
+                    official_date: new Date().toISOString().split('T')[0],
+                    contract_status: 'HIỆU LỰC'
+                }],
                 '11_System_Accounts': [{
                     account_id: 'ACC-001',
                     employee_id: adminId,
@@ -4484,7 +4554,7 @@ app.post('/api/setup/complete', async (req, res) => {
                     password: adminPass,
                     created_at: new Date().toISOString()
                 }],
-                '12_Activity_Logs': [{
+                '12_System_Logs': [{
                     log_id: 'LOG-001',
                     action_type: 'SETUP',
                     module: 'Hệ thống',
@@ -4498,7 +4568,19 @@ app.post('/api/setup/complete', async (req, res) => {
                 '13_Recycle_Bin': []
             };
         } else {
-            // Keep sample data & ensure Super Admin is registered
+            // Sample data option: Load from sample_database.json if available
+            const SAMPLE_DB_PATH = path.join(__dirname, 'sample_database.json');
+            if (fs.existsSync(SAMPLE_DB_PATH)) {
+                try {
+                    const sample = JSON.parse(fs.readFileSync(SAMPLE_DB_PATH, 'utf-8'));
+                    if (sample && sample.tables) {
+                        db.tables = sample.tables;
+                    }
+                } catch (e) {
+                    console.warn('Không thể đọc sample_database.json:', e.message);
+                }
+            }
+
             const accounts = db.tables['11_System_Accounts'] || [];
             const existingAdminIdx = accounts.findIndex(a => a.username === (admin?.username || 'admin') || a.role === 'ADMIN');
             const adminAcc = {
@@ -4520,9 +4602,12 @@ app.post('/api/setup/complete', async (req, res) => {
             db.tables['11_System_Accounts'] = accounts;
         }
 
+        // Cache clean or sample database in memory & storage
+        inMemoryDb = db;
+        lastCloudSyncTime = Date.now();
         saveDatabase(db);
 
-        // 4. Export all 14 tables directly to Google Sheets
+        // 4. Export all tables directly to Google Sheets
         console.log('[Setup Wizard] Đang đẩy 14 bảng dữ liệu lên Google Sheets...');
         await googleSheets.exportAllToGoogleSheets(db);
         console.log('[Setup Wizard] Đã đồng bộ Google Sheets thành công!');
