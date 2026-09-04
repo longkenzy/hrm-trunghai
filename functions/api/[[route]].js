@@ -231,7 +231,11 @@ export async function onRequest(context) {
     });
   }
 
-  // 2. Check D1 binding
+  // 2. Resolve D1 & R2 bindings
+  const db = env?.DB || env?.db || env?.DATABASE || env?.d1;
+  const r2 = env?.R2 || env?.r2 || env?.STORAGE || env?.bucket;
+
+  // 3. Check D1 binding
   if (!db) {
     return jsonResponse({
       success: false,

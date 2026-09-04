@@ -240,8 +240,8 @@ export default {
     const path = parts.join("/");
 
     // 4. Resolve D1 & R2 bindings (supporting multiple casing)
-    const db = db || env.db || env.DATABASE || env.d1;
-    const r2 = r2 || env.r2 || env.STORAGE || env.bucket;
+    const db = env?.DB || env?.db || env?.DATABASE || env?.d1;
+    const r2 = env?.R2 || env?.r2 || env?.STORAGE || env?.bucket;
 
     if (!db) {
       return jsonResponse({
